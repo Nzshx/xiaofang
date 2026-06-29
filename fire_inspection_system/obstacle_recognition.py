@@ -195,6 +195,15 @@ MIN_OBSTACLE_HEIGHT = 20.0
 MAX_SINGLE_OBSTACLE_REGION_RATIO = 0.45
 # 项目约定：PUB_HATCH 是墙体填充图层；只要 HATCH 解析出闭合 polygon，就作为墙体面障碍物。
 SUPPLEMENT_WALL_HATCH_LAYERS = {"PUB_HATCH"}
+WALL_FILL_LAYER_HINTS = (
+    "PUB_HATCH",
+    "HATCH",
+    "WALL",
+    "A-WALL",
+    "S-WALL",
+    "CONC",
+    "SHEAR",
+)
 SUPPLEMENT_HATCH_MIN_AREA = 10000.0
 SUPPLEMENT_HATCH_MAX_AREA = 8000000.0
 SUPPLEMENT_HATCH_MIN_LONG_SIDE = 800.0
@@ -672,6 +681,41 @@ def is_wall_like_polygon(poly: Any, region: dict[str, Any] | None = None) -> boo
     return True
 
 
+def row_has_wall_fill_semantic(row: dict[str, Any]) -> bool:
+    """Return True for filled/closed entities that are likely real wall surfaces."""
+    semantic = row_layer_block_text(row)
+    if norm_contains_any(semantic, WALL_FILL_LAYER_HINTS):
+        return True
+    return row_has_wall_semantic(row)
+
+
+def is_wall_surface_polygon(
+    poly: Any,
+    row: dict[str, Any],
+    region: dict[str, Any] | None = None,
+) -> bool:
+    """Accept closed wall fill surfaces, including curved or irregular wall bodies.
+
+    This intentionally does not require a skinny rectangle. Wall fills in CAD can
+    be L-shaped, bent, or arc-like, so rectangle/aspect filters are too strict.
+    """
+    if poly is None or poly.is_empty:
+        return False
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    if poly.is_empty:
+        return False
+    area = float(poly.area)
+    if area < WALL_POLYGON_MIN_AREA:
+        return False
+    region_area = float((region or {}).get("_area") or 0.0)
+    if region_area > 0 and area > region_area * MAX_SINGLE_OBSTACLE_REGION_RATIO:
+        return False
+    if not row_has_wall_fill_semantic(row):
+        return False
+    return True
+
+
 def arc_sweep_degrees(line: Any) -> float | None:
     try:
         coords = list(line.coords)
@@ -968,6 +1012,15 @@ def classify_geometry_obstacle(
 
     layer = str(row.get("layer", "") or "").strip()
 
+    # Filled or closed wall surfaces are preferred over edge-line walls. They
+    # preserve real wall area and support bent / irregular wall geometry.
+    if polygons and any(is_wall_surface_polygon(poly, row, region) for poly in polygons):
+        return {
+            "obstacle_type": "wall",
+            "confidence": 0.94,
+            "reason": "closed_wall_surface_polygon",
+        }
+
     # 按当前项目约定：PUB_HATCH 中解析出的闭合填充面就是墙体。
     # 这里不再使用面积、长宽比、厚度、矩形度等几何阈值过滤。
     # 只要求 cad_geometry_inventory.csv 中确实解析出了 polygon，后续仍会按 inspection_region 裁剪。
@@ -1032,7 +1085,11 @@ def obstacle_geometries_from_real_geometry(
             if is_supported_wall_line(line, context):
                 geoms.append(line.buffer(DEFAULT_WALL_BUFFER, cap_style=2, join_style=2))
         for poly in polygons:
-            if str(decision.get("reason")) == "pub_hatch_closed_area_wall":
+            if str(decision.get("reason")) == "closed_wall_surface_polygon":
+                # Keep validated wall fill polygons as surfaces. Do not apply
+                # straight-wall aspect/thickness/rectangularity filters here.
+                geoms.append(poly)
+            elif str(decision.get("reason")) == "pub_hatch_closed_area_wall":
                 # PUB_HATCH 已在分类阶段被认定为闭合墙体填充面，直接保留 polygon。
                 # 不再套用 is_supplement_wall_hatch_polygon() 或 is_wall_like_polygon() 的面积/长宽比限制。
                 geoms.append(poly)
