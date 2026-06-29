@@ -81,14 +81,8 @@ COLUMN_TERMS = (
     "COLU",
 )
 
-WINDOW_TERMS = (
-    "外窗",
-    "窗户",
-    "防火窗",
-    "WINDOW",
-    "WIND",
-    "WIN",
-)
+# 已删除“窗户作为障碍物”的识别逻辑：不再定义 WINDOW_TERMS，窗线不会输出为 obstacle_type=window。
+# “门窗”层中的门扇圆弧仍仅用于门洞无障碍区，不参与障碍物输出。
 
 STRUCTURE_LAYER_HINTS = (
     "建筑",
@@ -187,8 +181,7 @@ ARC_ENTITY_TYPES = {"ARC"}
 INSERT_ENTITY_TYPES = {"INSERT"}
 
 DEFAULT_WALL_BUFFER = 50.0
-DEFAULT_WINDOW_BUFFER = 50.0
-DOOR_MASK_PADDING = 320.0
+DOOR_MASK_PADDING = 150.0
 DOOR_MASK_MAX_LONG_SIDE = 5200.0
 DOOR_MASK_MAX_REGION_RATIO = 0.035
 DOOR_SWING_MIN_ANGLE_DEG = 85.0
@@ -200,6 +193,7 @@ WALL_PAIR_MAX_ANGLE_DEG = 8.0
 MIN_OBSTACLE_WIDTH = 20.0
 MIN_OBSTACLE_HEIGHT = 20.0
 MAX_SINGLE_OBSTACLE_REGION_RATIO = 0.45
+# 项目约定：PUB_HATCH 是墙体填充图层；只要 HATCH 解析出闭合 polygon，就作为墙体面障碍物。
 SUPPLEMENT_WALL_HATCH_LAYERS = {"PUB_HATCH"}
 SUPPLEMENT_HATCH_MIN_AREA = 10000.0
 SUPPLEMENT_HATCH_MAX_AREA = 8000000.0
@@ -334,7 +328,10 @@ def is_negative_context(row: dict[str, Any]) -> bool:
     layer_block = row_layer_block_text(row)
     if norm_contains_any(layer_block, NEGATIVE_LAYER_TERMS):
         return True
-    if norm_contains_any(layer_block, PASSAGE_OR_NON_OBSTACLE_TERMS) and not norm_contains_any(layer_block, WINDOW_TERMS):
+    # 门、楼梯、电梯、安全出口等通行相关对象不应进入障碍物识别。
+    # 旧版本为了识别窗户，允许“门窗/WINDOW”相关对象继续参与；
+    # 现在窗户不再作为障碍物，因此不再保留该例外。
+    if norm_contains_any(layer_block, PASSAGE_OR_NON_OBSTACLE_TERMS):
         return True
     return False
 
@@ -427,13 +424,6 @@ def classify_obstacle(
             "reason": "column_semantic_or_closed_geometry",
         }
 
-    if norm_contains_any(semantic, WINDOW_TERMS):
-        if entity_type in LINE_ENTITY_TYPES | AREA_ENTITY_TYPES | INSERT_ENTITY_TYPES:
-            return {
-                "obstacle_type": "window",
-                "confidence": 0.86,
-                "reason": "window_layer_or_block_semantic",
-            }
 
     if norm_contains_any(semantic, WALL_TERMS):
         return {
@@ -494,8 +484,6 @@ def obstacle_geometry(
         return bbox_centerline_buffer(bbox, buffer_width=DEFAULT_WALL_BUFFER)
     if obstacle_type == "wall" and metrics["aspect"] >= 6.0 and metrics["short_side"] <= 450.0:
         return bbox_centerline_buffer(bbox, buffer_width=max(DEFAULT_WALL_BUFFER, metrics["short_side"] / 2.0))
-    if obstacle_type == "window" and metrics["aspect"] >= 2.5:
-        return bbox_centerline_buffer(bbox, buffer_width=DEFAULT_WINDOW_BUFFER)
     return bbox_box(bbox)
 
 
@@ -578,20 +566,6 @@ def parse_geometry_json(row: dict[str, Any]) -> tuple[list[Any], list[Any]]:
     return lines, polygons
 
 
-def has_explicit_window_semantic(value: Any) -> bool:
-    text = str(value or "")
-    if not text:
-        return False
-    compact = compact_text(text)
-    explicit_terms = ("外窗", "窗户", "防火窗", "WINDOW", "WIN")
-    if norm_contains_any(text, explicit_terms):
-        return True
-    # 只写“门窗”的图层同时包含门和窗，不能直接作为窗障碍物，否则会把门洞也封死。
-    if "门窗" in text or "门窗" in compact:
-        return False
-    return "窗" in text or compact == "窗"
-
-
 def row_has_wall_semantic(row: dict[str, Any]) -> bool:
     return norm_contains_any(row_semantic_text(row), WALL_TERMS)
 
@@ -600,15 +574,12 @@ def row_has_column_semantic(row: dict[str, Any]) -> bool:
     return norm_contains_any(row_semantic_text(row), COLUMN_TERMS)
 
 
-def row_has_window_semantic(row: dict[str, Any]) -> bool:
-    return has_explicit_window_semantic(row_semantic_text(row))
-
 
 def row_has_solid_obstacle_semantic(row: dict[str, Any]) -> bool:
     semantic = row_layer_block_text(row)
     return norm_contains_any(
         semantic,
-        WALL_TERMS + COLUMN_TERMS + WINDOW_TERMS + STRUCTURE_LAYER_HINTS + SOLID_OBSTACLE_LAYER_HINTS,
+        WALL_TERMS + COLUMN_TERMS + STRUCTURE_LAYER_HINTS + SOLID_OBSTACLE_LAYER_HINTS,
     )
 
 
@@ -775,34 +746,6 @@ def is_closed_solid_obstacle_polygon(poly: Any, region: dict[str, Any] | None = 
     return area / rect_area >= CLOSED_SOLID_MIN_RECTANGULARITY
 
 
-def is_window_obstacle_geometry(
-    row: dict[str, Any],
-    bbox: tuple[float, float, float, float],
-    lines: list[Any],
-    polygons: list[Any],
-) -> bool:
-    entity_type = str(row.get("entity_type", "") or "").upper()
-    if entity_type in ARC_ENTITY_TYPES:
-        return False
-    if has_door_swing_geometry(row, bbox, lines):
-        return False
-    if any(is_door_swing_arc_line(line) for line in lines):
-        return False
-
-    metrics = bbox_metrics(bbox)
-    if metrics["long_side"] < 250.0:
-        return False
-    if lines:
-        return metrics["aspect"] >= 2.0 or metrics["short_side"] <= 450.0
-    for poly in polygons:
-        short_side, long_side = min_rect_dims(poly)
-        if short_side > 0 and long_side >= 250.0 and (
-            long_side / max(short_side, 1.0) >= 1.6 or short_side <= 450.0
-        ):
-            return True
-    return False
-
-
 def is_column_obstacle_geometry(
     row: dict[str, Any],
     region: dict[str, Any],
@@ -840,6 +783,41 @@ def expand_bbox(
     return minx - padding, miny - padding, maxx + padding, maxy + padding
 
 
+def is_door_clearance_candidate(
+    row: dict[str, Any],
+    bbox: tuple[float, float, float, float],
+    region: dict[str, Any],
+    lines: list[Any],
+    *,
+    door_arc_block_keys: set[str] | None = None,
+) -> bool:
+    """判断当前几何是否应作为门洞无障碍区依据。
+
+    处理目的：
+    1. 恢复“门 / 门洞 / 防火门 / DOOR / FHM”等门语义直接生成 door mask；
+    2. 允许同一门块内的直线、门框线、门槛线参与门洞净空保护；
+    3. 用尺寸和区域比例限制 mask 范围，避免把大面积墙体或整块图纸误当门区。
+    """
+    block_key = row_block_key(row)
+    in_door_arc_block = bool(
+        door_arc_block_keys and block_key and block_key in door_arc_block_keys
+    )
+    has_door_semantic = row_has_door_semantic(row)
+    has_swing_arc = has_door_swing_geometry(row, bbox, lines)
+    if not has_door_semantic and not has_swing_arc and not in_door_arc_block:
+        return False
+
+    metrics = bbox_metrics(bbox)
+    if metrics["long_side"] > DOOR_MASK_MAX_LONG_SIDE:
+        return False
+
+    region_area = float(region.get("_area") or 0.0)
+    if region_area > 0 and metrics["area"] > region_area * DOOR_MASK_MAX_REGION_RATIO:
+        return False
+
+    return True
+
+
 def door_clearance_mask(
     row: dict[str, Any],
     bbox: tuple[float, float, float, float],
@@ -849,17 +827,18 @@ def door_clearance_mask(
     *,
     door_arc_block_keys: set[str] | None = None,
 ) -> Any | None:
-    block_key = row_block_key(row)
-    in_door_arc_block = bool(
-        door_arc_block_keys and block_key and block_key in door_arc_block_keys
-    )
-    if not has_door_swing_geometry(row, bbox, lines) and not in_door_arc_block:
-        return None
-    metrics = bbox_metrics(bbox)
-    if metrics["long_side"] > DOOR_MASK_MAX_LONG_SIDE:
-        return None
-    region_area = float(region.get("_area") or 0.0)
-    if region_area > 0 and metrics["area"] > region_area * DOOR_MASK_MAX_REGION_RATIO:
+    """生成门洞无障碍 mask。
+
+    mask 采用“门对象 bbox + 150 图纸单位外扩”的保守矩形，
+    用于从墙、柱等障碍物中扣除门口前后的小范围通行净空。
+    """
+    if not is_door_clearance_candidate(
+        row,
+        bbox,
+        region,
+        lines,
+        door_arc_block_keys=door_arc_block_keys,
+    ):
         return None
     mask = bbox_box(expand_bbox(bbox, DOOR_MASK_PADDING))
     return mask.intersection(region_box(region))
@@ -970,15 +949,39 @@ def classify_geometry_obstacle(
     if is_negative_context(row):
         return None
 
-    metrics = bbox_metrics(bbox)
-    region_area = float(region.get("_area") or 0.0)
-    if region_area > 0 and metrics["area"] > region_area * MAX_SINGLE_OBSTACLE_REGION_RATIO:
-        return None
-
     block_key = row_block_key(row)
     in_door_arc_block = bool(
         door_arc_block_keys and block_key and block_key in door_arc_block_keys
     )
+
+    # 门对象及同一门块内的小范围几何不再进入障碍物分类。
+    # 这一步在 wall/column 判断之前执行，避免门框线、门槛线、
+    # 门块中的直线被识别为 FIRE_OBS_WALL 后堵住通行。
+    if is_door_clearance_candidate(
+        row,
+        bbox,
+        region,
+        lines,
+        door_arc_block_keys=door_arc_block_keys,
+    ):
+        return None
+
+    layer = str(row.get("layer", "") or "").strip()
+
+    # 按当前项目约定：PUB_HATCH 中解析出的闭合填充面就是墙体。
+    # 这里不再使用面积、长宽比、厚度、矩形度等几何阈值过滤。
+    # 只要求 cad_geometry_inventory.csv 中确实解析出了 polygon，后续仍会按 inspection_region 裁剪。
+    if entity_type == "HATCH" and layer in SUPPLEMENT_WALL_HATCH_LAYERS and polygons:
+        return {
+            "obstacle_type": "wall",
+            "confidence": 0.91,
+            "reason": "pub_hatch_closed_area_wall",
+        }
+
+    metrics = bbox_metrics(bbox)
+    region_area = float(region.get("_area") or 0.0)
+    if region_area > 0 and metrics["area"] > region_area * MAX_SINGLE_OBSTACLE_REGION_RATIO:
+        return None
 
     if row_has_column_semantic(row):
         if in_door_arc_block or not is_column_obstacle_geometry(row, region, lines, polygons):
@@ -989,16 +992,6 @@ def classify_geometry_obstacle(
             "reason": "column_layer_or_block_semantic_real_geometry",
         }
 
-    if row_has_window_semantic(row):
-        if in_door_arc_block or has_door_swing_geometry(row, bbox, lines):
-            return None
-        if not is_window_obstacle_geometry(row, bbox, lines, polygons):
-            return None
-        return {
-            "obstacle_type": "window",
-            "confidence": 0.88,
-            "reason": "explicit_window_semantic_real_geometry",
-        }
 
     if row_has_wall_semantic(row):
         return {
@@ -1006,15 +999,6 @@ def classify_geometry_obstacle(
             "confidence": 0.93,
             "reason": "wall_semantic_with_geometry_support",
         }
-
-    layer = str(row.get("layer", "") or "").strip()
-    if entity_type == "HATCH" and layer in SUPPLEMENT_WALL_HATCH_LAYERS:
-        if any(is_supplement_wall_hatch_polygon(poly) for poly in polygons):
-            return {
-                "obstacle_type": "wall",
-                "confidence": 0.68,
-                "reason": "supplement_skinny_pub_hatch_real_polygon",
-            }
 
     if (
         (entity_type in AREA_ENTITY_TYPES or is_closed_entity(row))
@@ -1028,7 +1012,7 @@ def classify_geometry_obstacle(
             "reason": "closed_filled_polygon_geometry",
         }
 
-    # 无墙/柱/窗语义时不再用“细长 bbox”猜墙，避免把轴线、尺寸线、设备线误当障碍。
+    # 无墙/柱语义时不再用“细长 bbox”猜墙，避免把轴线、尺寸线、设备线误当障碍。
     return None
 
 
@@ -1048,7 +1032,11 @@ def obstacle_geometries_from_real_geometry(
             if is_supported_wall_line(line, context):
                 geoms.append(line.buffer(DEFAULT_WALL_BUFFER, cap_style=2, join_style=2))
         for poly in polygons:
-            if str(decision.get("reason")) == "supplement_skinny_pub_hatch_real_polygon":
+            if str(decision.get("reason")) == "pub_hatch_closed_area_wall":
+                # PUB_HATCH 已在分类阶段被认定为闭合墙体填充面，直接保留 polygon。
+                # 不再套用 is_supplement_wall_hatch_polygon() 或 is_wall_like_polygon() 的面积/长宽比限制。
+                geoms.append(poly)
+            elif str(decision.get("reason")) == "supplement_skinny_pub_hatch_real_polygon":
                 if is_supplement_wall_hatch_polygon(poly):
                     geoms.append(poly)
             else:
@@ -1059,10 +1047,6 @@ def obstacle_geometries_from_real_geometry(
             geoms.extend(poly for poly in polygons if is_closed_solid_obstacle_polygon(poly, region))
         else:
             geoms.extend(polygons)
-    elif obstacle_type == "window":
-        for line in lines:
-            geoms.append(line.buffer(DEFAULT_WINDOW_BUFFER, cap_style=2, join_style=2))
-        geoms.extend(polygons)
     return [geom for geom in geoms if geom is not None and not geom.is_empty]
 
 
@@ -1114,8 +1098,6 @@ def recognize_obstacle_geometry_rows(
         if block_key and any(is_door_swing_arc_line(line) for line in lines):
             door_arc_block_keys_by_region[sheet_id].add(block_key)
 
-        if row_has_wall_semantic(row) and not is_negative_context(row):
-            wall_context_lines_by_region[sheet_id].extend(lines)
 
     for entry in entries:
         sheet_id = entry["sheet_id"]
@@ -1129,6 +1111,21 @@ def recognize_obstacle_geometry_rows(
         )
         if mask is not None and not mask.is_empty:
             door_masks_by_region[sheet_id].append(mask)
+
+        # 墙线平行配对上下文也要排除门对象和门块内小几何。
+        # 否则门框线虽然不直接输出为障碍物，却可能作为“平行伴随线”支持旁边短线成为墙。
+        if (
+            row_has_wall_semantic(entry["row"])
+            and not is_negative_context(entry["row"])
+            and not is_door_clearance_candidate(
+                entry["row"],
+                entry["bbox"],
+                entry["region"],
+                entry["lines"],
+                door_arc_block_keys=door_arc_block_keys_by_region.get(sheet_id),
+            )
+        ):
+            wall_context_lines_by_region[sheet_id].extend(entry["lines"])
 
     door_mask_union_by_region: dict[str, Any] = {}
     for sheet_id, masks in door_masks_by_region.items():
@@ -1415,7 +1412,6 @@ def write_obstacle_overlay_dxf(
     layer_by_type = {
         "wall": ("FIRE_OBS_WALL", 1),
         "column": ("FIRE_OBS_COLUMN", 5),
-        "window": ("FIRE_OBS_WINDOW", 4),
     }
     label_layer = "FIRE_OBS_LABEL"
     ensure_dxf_layer(doc, label_layer, 1)
@@ -1506,7 +1502,7 @@ def recognize_floor_obstacles(
         "recognition_mode": "real_geometry_inventory_with_floor_region_constraint",
         "note": (
             "障碍物识别复用上游 cad_geometry_inventory.csv 中的真实 LINE/LWPOLYLINE/HATCH/CIRCLE 几何；"
-            "不再使用 inventory bbox 猜测墙体。若缺少块内墙体，请重新生成 inventory 以触发结构几何块选择性展开。"
+            "不再使用 inventory bbox 猜测墙体；门语义、门扇圆弧及同一门块会生成 150 单位门洞无障碍区，避免门框线/门槛线/门块内线条堵门。若缺少块内墙体，请重新生成 inventory 以触发结构几何块选择性展开。"
         ),
         "region_count": len(regions),
         "obstacle_count": len(obstacle_rows),
@@ -1560,7 +1556,7 @@ def infer_inventory_dir_from_sheets(sheets_json: Path) -> Path | None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="按楼层可巡检区域识别墙体、柱体、窗等障碍物，并生成审查标注 DXF。")
+    parser = argparse.ArgumentParser(description="按楼层可巡检区域识别墙体、柱体等障碍物，并生成审查标注 DXF。")
     parser.add_argument("-i", "--input-dxf", default="", help="原始 DXF 文件路径。")
     parser.add_argument("--inventory-dir", default="", help="包含 cad_object_inventory.csv 的上游 inventory 目录。")
     parser.add_argument("--sheets-json", default="", help="图幅/楼层预处理 drawing_sheets_floors.json。")
