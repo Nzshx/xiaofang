@@ -62,6 +62,11 @@ class ObstacleConfig:
     wall_connect_buffer: float = 300.0
     opening_mask_buffer: float = 80.0
     direct_line_buffer: float = 30.0
+    acute_connected_line_min_angle_deg: float = 10.0
+    acute_connected_line_max_angle_deg: float = 80.0
+    obtuse_connected_line_min_angle_deg: float = 95.0
+    obtuse_connected_line_max_angle_deg: float = 175.0
+    connected_endpoint_tolerance: float = 120.0
 
 
 @dataclass(frozen=True)
@@ -206,6 +211,20 @@ def split_to_segments(line: LineString, config: ObstacleConfig) -> list[LineStri
         if segment.length >= config.min_line_length:
             out.append(segment)
     return out
+
+
+def joint_angle_deg(prev_point: tuple[float, float], joint: tuple[float, float], next_point: tuple[float, float]) -> float | None:
+    ax = prev_point[0] - joint[0]
+    ay = prev_point[1] - joint[1]
+    bx = next_point[0] - joint[0]
+    by = next_point[1] - joint[1]
+    len_a = math.hypot(ax, ay)
+    len_b = math.hypot(bx, by)
+    if len_a <= 0 or len_b <= 0:
+        return None
+    dot = ax * bx + ay * by
+    cosine = max(-1.0, min(1.0, dot / (len_a * len_b)))
+    return math.degrees(math.acos(cosine))
 
 
 def load_geometry_rows(inventory_dir: Path) -> list[dict[str, str]]:
@@ -813,6 +832,203 @@ def detect_llm_hit_obstacles(
     return out
 
 
+def single_direct_line_candidate(
+    item: dict[str, Any],
+    rows_by_object_id: dict[str, dict[str, str]],
+    config: ObstacleConfig,
+) -> tuple[dict[str, str], LineString] | None:
+    """Return the original single line behind a direct LLM wall obstacle."""
+
+    if item.get("obstacle_type") != "wall":
+        return None
+    if item.get("reason") != "llm_layer_obstacle_hit_direct_geometry_unfiltered_review":
+        return None
+    row = rows_by_object_id.get(str(item.get("object_id") or ""))
+    if not row:
+        return None
+    entity_type = str(row.get("entity_type") or "").upper()
+    if entity_type not in {"LINE", "LWPOLYLINE", "POLYLINE"}:
+        return None
+    if str(row.get("is_closed") or "") in {"1", "true", "TRUE"}:
+        return None
+    if polygons_from_row(row, config):
+        return None
+    lines = lines_from_row(row, config, min_length=0.0)
+    if len(lines) != 1:
+        return None
+    coords = list(lines[0].coords)
+    if len(coords) != 2:
+        return None
+    return row, lines[0]
+
+
+def line_endpoint_pair(line: LineString) -> tuple[tuple[float, float], tuple[float, float]]:
+    coords = list(line.coords)
+    return (float(coords[0][0]), float(coords[0][1])), (float(coords[-1][0]), float(coords[-1][1]))
+
+
+def point_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def nearest_endpoint_distance(
+    line_a: LineString,
+    line_b: LineString,
+) -> tuple[float, tuple[float, float]]:
+    best_dist = float("inf")
+    best_joint = (0.0, 0.0)
+    for point_a in line_endpoint_pair(line_a):
+        for point_b in line_endpoint_pair(line_b):
+            dist = point_distance(point_a, point_b)
+            if dist < best_dist:
+                best_dist = dist
+                best_joint = ((point_a[0] + point_b[0]) / 2.0, (point_a[1] + point_b[1]) / 2.0)
+    return best_dist, best_joint
+
+
+def line_other_endpoint(line: LineString, joint: tuple[float, float]) -> tuple[float, float]:
+    start, end = line_endpoint_pair(line)
+    return end if point_distance(start, joint) <= point_distance(end, joint) else start
+
+
+def connected_line_angle(line_a: LineString, line_b: LineString, joint: tuple[float, float]) -> float | None:
+    return joint_angle_deg(line_other_endpoint(line_a, joint), joint, line_other_endpoint(line_b, joint))
+
+
+def should_filter_connected_line_angle(angle: float, config: ObstacleConfig) -> bool:
+    return (
+        config.acute_connected_line_min_angle_deg <= angle <= config.acute_connected_line_max_angle_deg
+        or config.obtuse_connected_line_min_angle_deg <= angle <= config.obtuse_connected_line_max_angle_deg
+    )
+
+
+def parallel_bundle_support_indices(
+    group: list[tuple[int, dict[str, Any], dict[str, str], LineString]],
+    config: ObstacleConfig,
+) -> set[int]:
+    if len(group) < config.min_parallel_lines:
+        return set()
+
+    angle_buckets: list[list[int]] = []
+    for group_index, (_index, _item, _row, line) in enumerate(group):
+        angle = normalized_angle(line)
+        for bucket in angle_buckets:
+            if angle_delta(normalized_angle(group[bucket[0]][3]), angle) <= config.parallel_angle_tolerance_deg:
+                bucket.append(group_index)
+                break
+        else:
+            angle_buckets.append([group_index])
+
+    supported: set[int] = set()
+    for bucket in angle_buckets:
+        if len(bucket) < config.min_parallel_lines:
+            continue
+        base_angle = normalized_angle(group[bucket[0]][3])
+        direction, normal = direction_and_normal(base_angle)
+        meta: list[tuple[int, float, tuple[float, float]]] = []
+        for group_index in bucket:
+            line = group[group_index][3]
+            meta.append((group_index, line_offset(line, normal), line_projection(line, direction)))
+        meta.sort(key=lambda item: item[1])
+
+        for pos, (group_index, offset, interval) in enumerate(meta):
+            support_count = 1
+            for other_pos in range(pos - 1, -1, -1):
+                other_index, other_offset, other_interval = meta[other_pos]
+                spacing = offset - other_offset
+                if spacing > config.max_parallel_bundle_width:
+                    break
+                if spacing <= 0:
+                    continue
+                overlap = min(interval[1], other_interval[1]) - max(interval[0], other_interval[0])
+                if overlap >= config.min_parallel_overlap:
+                    support_count += 1
+                    if support_count >= config.min_parallel_lines:
+                        supported.add(group_index)
+                        supported.add(other_index)
+                        break
+            if group_index in supported:
+                continue
+            for other_pos in range(pos + 1, len(meta)):
+                other_index, other_offset, other_interval = meta[other_pos]
+                spacing = other_offset - offset
+                if spacing > config.max_parallel_bundle_width:
+                    break
+                if spacing <= 0:
+                    continue
+                overlap = min(interval[1], other_interval[1]) - max(interval[0], other_interval[0])
+                if overlap >= config.min_parallel_overlap:
+                    support_count += 1
+                    if support_count >= config.min_parallel_lines:
+                        supported.add(group_index)
+                        supported.add(other_index)
+                        break
+    return supported
+
+
+def filter_connected_obtuse_single_line_obstacles(
+    obstacles: list[dict[str, Any]],
+    rows: list[dict[str, str]],
+    config: ObstacleConfig,
+) -> list[dict[str, Any]]:
+    """Remove direct single-line wall artifacts joined by an obtuse angle across entities."""
+
+    rows_by_object_id = {str(row.get("object_id") or ""): row for row in rows if row.get("object_id")}
+    groups: dict[tuple[str, str, str], list[tuple[int, dict[str, Any], dict[str, str], LineString]]] = defaultdict(list)
+    for index, item in enumerate(obstacles):
+        candidate = single_direct_line_candidate(item, rows_by_object_id, config)
+        if candidate is None:
+            continue
+        row, line = candidate
+        groups[same_line_attr(row)].append((index, item, row, line))
+
+    remove_indices: set[int] = set()
+    cell_size = max(config.connected_endpoint_tolerance, 1.0)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        parallel_support = parallel_bundle_support_indices(group, config)
+        endpoint_grid: dict[tuple[int, int], list[tuple[int, tuple[float, float]]]] = defaultdict(list)
+        for group_index, (_index, _item, _row, line) in enumerate(group):
+            for endpoint in line_endpoint_pair(line):
+                cell = (math.floor(endpoint[0] / cell_size), math.floor(endpoint[1] / cell_size))
+                endpoint_grid[cell].append((group_index, endpoint))
+
+        checked_pairs: set[tuple[int, int]] = set()
+        for group_index, (_index, _item, _row, line) in enumerate(group):
+            for endpoint in line_endpoint_pair(line):
+                cx = math.floor(endpoint[0] / cell_size)
+                cy = math.floor(endpoint[1] / cell_size)
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for other_group_index, _other_endpoint in endpoint_grid.get((cx + dx, cy + dy), []):
+                            if other_group_index == group_index:
+                                continue
+                            pair_key = tuple(sorted((group_index, other_group_index)))
+                            if pair_key in checked_pairs:
+                                continue
+                            checked_pairs.add(pair_key)
+                            other_line = group[other_group_index][3]
+                            distance, joint = nearest_endpoint_distance(line, other_line)
+                            if distance > config.connected_endpoint_tolerance:
+                                continue
+                            angle = connected_line_angle(line, other_line, joint)
+                            if angle is None:
+                                continue
+                            if not should_filter_connected_line_angle(angle, config):
+                                continue
+                            if group_index in parallel_support:
+                                continue
+                            if other_group_index in parallel_support:
+                                continue
+                            remove_indices.add(group[group_index][0])
+                            remove_indices.add(group[other_group_index][0])
+
+    if not remove_indices:
+        return obstacles
+    return [item for index, item in enumerate(obstacles) if index not in remove_indices]
+
+
 def detect_polygon_and_fill_obstacles(
     rows: list[dict[str, str]],
     regions: list[dict[str, Any]],
@@ -1342,7 +1558,7 @@ def recognize_floor_obstacles(
 
     layer_decisions = classify_layers_by_llm(rows, out_dir)
     llm_hit_obstacles = detect_llm_hit_obstacles(rows, regions, layer_decisions, config)
-    obstacles = llm_hit_obstacles
+    obstacles = filter_connected_obtuse_single_line_obstacles(llm_hit_obstacles, rows, config)
 
     obstacle_csv = out_dir / OBSTACLE_CSV_FILE
     write_obstacle_csv(obstacle_csv, obstacles)
@@ -1363,7 +1579,7 @@ def recognize_floor_obstacles(
             "inventory_dir": str(inventory_path),
             "sheets_json": str(sheets_path),
             "output_dir": str(out_dir),
-            "strategy": "Unfiltered review: LLM-hit obstacle layers output directly without region clipping, line-length filtering, opening subtraction, or dedupe",
+            "strategy": "Review mode: LLM-hit obstacle layers output directly, then connected single-line artifacts are filtered by endpoint graph angle ranges.",
             "layer_llm_decisions": str((out_dir / LAYER_LLM_FILE).resolve()),
             "obstacle_csv": str(obstacle_csv.resolve()),
             "marked_dxf": str(marked_dxf.resolve()) if marked_dxf else "",
