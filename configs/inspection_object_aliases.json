@@ -1,0 +1,645 @@
+{
+  "description": "Inspection object deterministic alias library. Runtime uses only canonical, aliases, and abbreviations; any hit is an inspection_object.",
+  "objects": [
+    {
+      "canonical": "安全出口",
+      "aliases": [
+        "安全出口",
+        "疏散出口",
+        "安全疏散出口",
+        "出口指示",
+        "安全出口标志",
+        "SAFETY EXIT",
+        "EMERGENCY EXIT",
+        "EVACUATION EXIT"
+      ],
+      "abbreviations": [
+        "AQCK",
+        "SSCK",
+        "EXIT_SIGN"
+      ]
+    },
+    {
+      "canonical": "避难间",
+      "aliases": [
+        "避难间",
+        "避难室",
+        "避难区",
+        "REFUGE ROOM",
+        "REFUGE AREA"
+      ],
+      "abbreviations": [
+        "BNJ",
+        "BNS"
+      ]
+    },
+    {
+      "canonical": "消防水泵房/消防泵房",
+      "aliases": [
+        "消防水泵房",
+        "消防泵房",
+        "水泵房",
+        "消防泵室",
+        "FIRE PUMP ROOM",
+        "FIRE WATER PUMP ROOM",
+        "PUMP ROOM"
+      ],
+      "abbreviations": [
+        "XFSBF",
+        "XFBF",
+        "FPR",
+        "FIRE_PUMP_ROOM"
+      ]
+    },
+    {
+      "canonical": "开闭所",
+      "aliases": [
+        "开闭所",
+        "开关站",
+        "开关房",
+        "SWITCHING STATION",
+        "SWITCH ROOM"
+      ],
+      "abbreviations": [
+        "KBS",
+        "KGZ"
+      ]
+    },
+    {
+      "canonical": "用户变",
+      "aliases": [
+        "用户变",
+        "用户变电所",
+        "用户变配电",
+        "USER SUBSTATION",
+        "CUSTOMER SUBSTATION"
+      ],
+      "abbreviations": [
+        "YHB",
+        "YHBD"
+      ]
+    },
+    {
+      "canonical": "配电房",
+      "aliases": [
+        "配电房",
+        "配电间",
+        "配电室",
+        "低压配电房",
+        "高压配电房",
+        "DISTRIBUTION ROOM",
+        "ELECTRICAL ROOM",
+        "POWER DISTRIBUTION ROOM"
+      ],
+      "abbreviations": [
+        "PDF",
+        "PDS",
+        "PDR",
+        "PDJ",
+        "ELEC_ROOM"
+      ]
+    },
+    {
+      "canonical": "消防控制室/消控室",
+      "aliases": [
+        "消防控制室",
+        "消控室",
+        "控制室",
+        "消防控制中心",
+        "消防控制房",
+        "消防前室",
+        "FIRE CONTROL ROOM",
+        "FIRE CONTROL CENTER",
+        "FIRE CENTER"
+      ],
+      "abbreviations": [
+        "XFKZS",
+        "XKS",
+        "FCC",
+        "FCR"
+      ]
+    },
+    {
+      "canonical": "风机房",
+      "aliases": [
+        "风机房",
+        "通风机房",
+        "送风机房",
+        "风井",
+        "油烟井",
+        "FAN ROOM",
+        "VENTILATION FAN ROOM"
+      ],
+      "abbreviations": [
+        "FJF",
+        "FAN_ROOM"
+      ]
+    },
+    {
+      "canonical": "进风机房",
+      "aliases": [
+        "进风机房",
+        "进风房",
+        "送风机房",
+        "排风井",
+        "SUPPLY AIR FAN ROOM",
+        "AIR SUPPLY FAN ROOM"
+      ],
+      "abbreviations": [
+        "JFJF",
+        "SAF_ROOM"
+      ]
+    },
+    {
+      "canonical": "补风机房",
+      "aliases": [
+        "补风机房",
+        "补风房",
+        "MAKEUP AIR FAN ROOM"
+      ],
+      "abbreviations": [
+        "BFJF",
+        "MAF_ROOM"
+      ]
+    },
+    {
+      "canonical": "排烟机",
+      "aliases": [
+        "排烟机",
+        "排烟风机",
+        "排烟机房",
+        "SMOKE EXHAUST FAN",
+        "EXHAUST FAN"
+      ],
+      "abbreviations": [
+        "PYJ",
+        "PYF",
+        "SEF"
+      ]
+    },
+    {
+      "canonical": "强电间",
+      "aliases": [
+        "强电间",
+        "强电井",
+        "强电房",
+        "STRONG CURRENT ROOM",
+        "POWER ROOM"
+      ],
+      "abbreviations": [
+        "QDJ",
+        "QDR"
+      ]
+    },
+    {
+      "canonical": "弱电间",
+      "aliases": [
+        "弱电间",
+        "弱电井",
+        "弱电房",
+        "WEAK CURRENT ROOM",
+        "ELV ROOM"
+      ],
+      "abbreviations": [
+        "RDJ",
+        "RDR",
+        "ELV"
+      ]
+    },
+    {
+      "canonical": "强弱电间",
+      "aliases": [
+        "强弱电间",
+        "强弱电井",
+        "强弱电房",
+        "电气间",
+        "POWER AND ELV ROOM",
+        "ELECTRICAL AND ELV ROOM"
+      ],
+      "abbreviations": [
+        "QRDJ",
+        "QRDR",
+        "QDRDJ"
+      ]
+    },
+    {
+      "canonical": "电井",
+      "aliases": [
+        "电井",
+        "电缆井",
+        "电气竖井",
+        "ELECTRICAL SHAFT",
+        "CABLE SHAFT"
+      ],
+      "abbreviations": [
+        "E-SHAFT",
+        "ELEC_SHAFT"
+      ]
+    },
+    {
+      "canonical": "消防电梯",
+      "aliases": [
+        "消防电梯",
+        "消防梯",
+        "FIRE ELEVATOR",
+        "FIRE LIFT",
+        "FIREFIGHTER LIFT"
+      ],
+      "abbreviations": [
+        "XFDT",
+        "FEL",
+        "FIRE_LIFT"
+      ]
+    },
+    {
+      "canonical": "防火卷帘",
+      "aliases": [
+        "防火卷帘",
+        "防火卷帘门",
+        "特级防火卷帘",
+        "防火卷帘门帘",
+        "FIRE SHUTTER",
+        "FIRE ROLLER SHUTTER",
+        "FIRE CURTAIN"
+      ],
+      "abbreviations": [
+        "FHJL",
+        "FHJLM",
+        "FIRE_SHUTTER"
+      ]
+    },
+    {
+      "canonical": "灭火器",
+      "aliases": [
+        "灭火器",
+        "手提式灭火器",
+        "FIRE EXTINGUISHER",
+        "EXTINGUISHER"
+      ],
+      "abbreviations": [
+        "MHQ",
+        "FE"
+      ]
+    },
+    {
+      "canonical": "供水装置",
+      "aliases": [
+        "供水装置",
+        "消防供水装置",
+        "集水池",
+        "WATER SUPPLY DEVICE",
+        "FIRE WATER SUPPLY DEVICE",
+        "水井"
+      ],
+      "abbreviations": [
+        "GSZZ",
+        "WSD"
+      ]
+    },
+    {
+      "canonical": "储存装置间/灭火剂储存装置/驱动装置",
+      "aliases": [
+        "储存装置间",
+        "灭火剂储存装置",
+        "驱动装置",
+        "消防器材室",
+        "消防器材间",
+        "驱动装置间",
+        "设备前室",
+        "AGENT STORAGE ROOM",
+        "EXTINGUISHING AGENT STORAGE",
+        "DRIVING DEVICE ROOM",
+        "泄压装置"
+      ],
+      "abbreviations": [
+        "CCZZJ",
+        "MHCZZZ",
+        "QDZZ"
+      ]
+    },
+    {
+      "canonical": "供水水源/消防水池",
+      "aliases": [
+        "供水水源",
+        "消防水池",
+        "消防水源",
+        "水井",
+        "集水池",
+        "FIRE WATER POOL",
+        "FIRE WATER RESERVOIR"
+      ],
+      "abbreviations": [
+        "XFSC"
+      ]
+    },
+    {
+      "canonical": "消防水泵",
+      "aliases": [
+        "消防水泵",
+        "消防泵",
+        "喷淋泵",
+        "消火栓泵",
+        "FIRE PUMP",
+        "FIRE WATER PUMP",
+        "SPRINKLER PUMP",
+        "HYDRANT PUMP"
+      ],
+      "abbreviations": [
+        "XFSB",
+        "XFB",
+        "FP",
+        "FIRE_PUMP"
+      ]
+    },
+    {
+      "canonical": "报警阀组",
+      "aliases": [
+        "报警阀组",
+        "报警阀",
+        "ALARM VALVE GROUP",
+        "ALARM VALVE"
+      ],
+      "abbreviations": [
+        "BJFZ",
+        "AV"
+      ]
+    },
+    {
+      "canonical": "喷头",
+      "aliases": [
+        "喷头",
+        "消防喷头",
+        "喷淋头",
+        "洒水喷头",
+        "SPRINKLER HEAD",
+        "SPRINKLER",
+        "NOZZLE"
+      ],
+      "abbreviations": [
+        "SPK"
+      ]
+    },
+    {
+      "canonical": "消防水箱",
+      "aliases": [
+        "消防水箱",
+        "消防高位水箱",
+        "高位消防水箱",
+        "高位水箱",
+        "FIRE WATER TANK",
+        "FIRE WATER ROOF TANK"
+      ],
+      "abbreviations": [
+        "XFSX",
+        "GWSX",
+        "FWT"
+      ]
+    },
+    {
+      "canonical": "室外（内）消火栓",
+      "aliases": [
+        "消火栓",
+        "室内消火栓",
+        "室外消火栓",
+        "消火栓箱",
+        "HYDRANT",
+        "FIRE HYDRANT",
+        "INDOOR HYDRANT",
+        "OUTDOOR HYDRANT"
+      ],
+      "abbreviations": [
+        "XHS",
+        "SN",
+        "HYDRANT"
+      ]
+    },
+    {
+      "canonical": "灭火装置",
+      "aliases": [
+        "灭火装置",
+        "气体灭火装置",
+        "自动灭火装置",
+        "FIRE EXTINGUISHING SYSTEM",
+        "EXTINGUISHING DEVICE"
+      ],
+      "abbreviations": [
+        "MHZZ",
+        "FES"
+      ]
+    },
+    {
+      "canonical": "管网与喷头",
+      "aliases": [
+        "管网与喷头",
+        "喷淋管网",
+        "消防管网",
+        "管网",
+        "SPRINKLER NETWORK",
+        "FIRE PIPE NETWORK",
+        "PIPE NETWORK"
+      ],
+      "abbreviations": [
+        "GWPT",
+        "GW",
+        "PIPE_NET"
+      ]
+    },
+    {
+      "canonical": "备用发电机/柴油发电机房",
+      "aliases": [
+        "备用发电机",
+        "柴油发电机房",
+        "发电机房",
+        "柴油发电机",
+        "STANDBY GENERATOR",
+        "DIESEL GENERATOR ROOM",
+        "GENERATOR ROOM"
+      ],
+      "abbreviations": [
+        "BYFDJ",
+        "CYFDJF",
+        "GEN_ROOM",
+        "DG_ROOM"
+      ]
+    },
+    {
+      "canonical": "变配电房",
+      "aliases": [
+        "变配电房",
+        "变配电室",
+        "变电所",
+        "变电站",
+        "配电井",
+        "SUBSTATION",
+        "TRANSFORMER ROOM",
+        "POWER SUBSTATION"
+      ],
+      "abbreviations": [
+        "BPDF",
+        "BDS",
+        "TR_ROOM"
+      ]
+    },
+    {
+      "canonical": "消防应急照明和疏散指示标志",
+      "aliases": [
+        "消防应急照明",
+        "疏散指示标志",
+        "应急照明",
+        "疏散指示",
+        "应急灯",
+        "出口指示",
+        "安全出口标志",
+        "EMERGENCY LIGHTING",
+        "EVACUATION INDICATOR",
+        "EXIT SIGN"
+      ],
+      "abbreviations": [
+        "YJZM",
+        "SSZS",
+        "EL",
+        "EXIT_SIGN"
+      ]
+    },
+    {
+      "canonical": "火灾探测器",
+      "aliases": [
+        "火灾探测器",
+        "感烟探测器",
+        "感温探测器",
+        "烟感",
+        "温感",
+        "探测器",
+        "FIRE DETECTOR",
+        "SMOKE DETECTOR",
+        "HEAT DETECTOR"
+      ],
+      "abbreviations": [
+        "HZTCQ",
+        "YGAN",
+        "WGAN",
+        "FD",
+        "SD",
+        "HD"
+      ]
+    },
+    {
+      "canonical": "消防通讯",
+      "aliases": [
+        "消防通讯",
+        "消防通信",
+        "消防电话",
+        "FIRE COMMUNICATION",
+        "FIRE TELEPHONE"
+      ],
+      "abbreviations": [
+        "XFTX",
+        "XFTH",
+        "FTEL"
+      ]
+    },
+    {
+      "canonical": "布线",
+      "aliases": [
+        "布线",
+        "消防布线",
+        "报警布线",
+        "线缆敷设",
+        "WIRING",
+        "CABLING"
+      ],
+      "abbreviations": [
+        "WIRING"
+      ]
+    },
+    {
+      "canonical": "应急广播及警报装置",
+      "aliases": [
+        "应急广播",
+        "警报装置",
+        "消防广播",
+        "声光警报器",
+        "声光报警器",
+        "EMERGENCY BROADCAST",
+        "FIRE BROADCAST",
+        "ALARM DEVICE",
+        "AUDIBLE AND VISUAL ALARM"
+      ],
+      "abbreviations": [
+        "YJGB",
+        "XFGB",
+        "SGJB",
+        "AV_ALARM"
+      ]
+    },
+    {
+      "canonical": "区域显示器",
+      "aliases": [
+        "区域显示器",
+        "楼层显示器",
+        "火灾显示盘",
+        "ZONE DISPLAY",
+        "FIRE DISPLAY PANEL",
+        "FLOOR DISPLAY"
+      ],
+      "abbreviations": [
+        "QYXSQ",
+        "HZXS",
+        "FDP"
+      ]
+    },
+    {
+      "canonical": "手动报警按钮",
+      "aliases": [
+        "手动报警按钮",
+        "手报按钮",
+        "手动火灾报警按钮",
+        "MANUAL CALL POINT",
+        "MANUAL ALARM BUTTON",
+        "MANUAL FIRE ALARM BUTTON"
+      ],
+      "abbreviations": [
+        "SDBJ",
+        "SB",
+        "MCP",
+        "MAB"
+      ]
+    },
+    {
+      "canonical": "火灾报警控制器",
+      "aliases": [
+        "火灾报警控制器",
+        "报警控制器",
+        "火灾报警控制盘",
+        "报警主机",
+        "FIRE ALARM CONTROL PANEL",
+        "FIRE ALARM CONTROLLER",
+        "FIRE ALARM PANEL"
+      ],
+      "abbreviations": [
+        "HZBJKZQ",
+        "BJKZQ",
+        "FACP",
+        "FAS"
+      ]
+    },
+    {
+      "canonical": "消防联动控制器及消防控制室图形显示装置",
+      "aliases": [
+        "消防联动控制器",
+        "消防控制室图形显示装置",
+        "图形显示装置",
+        "消防图形显示装置",
+        "FIRE LINKAGE CONTROLLER",
+        "FIRE GRAPHIC DISPLAY",
+        "GRAPHIC DISPLAY DEVICE"
+      ],
+      "abbreviations": [
+        "XFLDKZQ",
+        "LDKZQ",
+        "CRT",
+        "FGD"
+      ]
+    }
+  ]
+}
