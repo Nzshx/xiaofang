@@ -35,7 +35,7 @@ GEOMETRY_FILE = "cad_geometry_inventory.csv"
 LAYER_LLM_FILE = "obstacle_layer_llm_decisions.json"
 OBSTACLE_CSV_FILE = "floor_obstacles.csv"
 RESULT_JSON_FILE = "floor_obstacle_recognition_result.json"
-LAYER_LLM_PROMPT_VERSION = "obstacle-layer-v2-strict-wall-column"
+LAYER_LLM_PROMPT_VERSION = "obstacle-layer-v5-parallel-wall-lines"
 LAYER_LLM_BATCH_SIZE = 20
 LAYER_LLM_MAX_RETRIES = 3
 
@@ -47,26 +47,12 @@ TEXT_LAYER = "CHECK_OBSTACLE_TEXT"
 
 @dataclass(frozen=True)
 class ObstacleConfig:
-    """Centralized geometry thresholds for obstacle validation."""
+    """Scale-invariant controls for obstacle review geometry."""
 
-    min_area: float = 120.0
-    max_region_area_ratio: float = 0.45
-    max_aspect_ratio: float = 40.0
+    min_area: float = 0.0
     parallel_angle_tolerance_deg: float = 5.0
-    parallel_spacing_tolerance_ratio: float = 0.35
-    min_parallel_lines: int = 3
-    max_parallel_lines: int = 4
-    min_line_length: float = 120.0
-    max_parallel_bundle_width: float = 1800.0
-    min_parallel_overlap: float = 250.0
-    wall_connect_buffer: float = 300.0
-    opening_mask_buffer: float = 80.0
-    direct_line_buffer: float = 30.0
-    acute_connected_line_min_angle_deg: float = 10.0
-    acute_connected_line_max_angle_deg: float = 80.0
-    obtuse_connected_line_min_angle_deg: float = 95.0
-    obtuse_connected_line_max_angle_deg: float = 175.0
-    connected_endpoint_tolerance: float = 120.0
+    min_projection_overlap_ratio: float = 0.05
+    max_wall_width_to_overlap_ratio: float = 0.60
 
 
 @dataclass(frozen=True)
@@ -153,7 +139,7 @@ def polygon_from_points(points: Any, *, min_area: float) -> Polygon | None:
         poly = Polygon(coords)
         if not poly.is_valid:
             poly = poly.buffer(0)
-        if poly.is_empty or poly.area < min_area:
+        if poly.is_empty or poly.area <= min_area:
             return None
         return poly
     except Exception:
@@ -180,7 +166,7 @@ def polygons_from_row(row: dict[str, str], config: ObstacleConfig) -> list[Polyg
 def lines_from_row(row: dict[str, str], config: ObstacleConfig, *, min_length: float | None = None) -> list[LineString]:
     payload = parse_geometry_json(row)
     lines: list[LineString] = []
-    threshold = config.min_line_length if min_length is None else min_length
+    threshold = 0.0 if min_length is None else min_length
     for item in payload.get("lines", []) or []:
         if not isinstance(item, list) or len(item) < 2:
             continue
@@ -201,16 +187,6 @@ def lines_from_row(row: dict[str, str], config: ObstacleConfig, *, min_length: f
         except Exception:
             continue
     return lines
-
-
-def split_to_segments(line: LineString, config: ObstacleConfig) -> list[LineString]:
-    coords = list(line.coords)
-    out: list[LineString] = []
-    for start, end in zip(coords, coords[1:]):
-        segment = LineString([start, end])
-        if segment.length >= config.min_line_length:
-            out.append(segment)
-    return out
 
 
 def joint_angle_deg(prev_point: tuple[float, float], joint: tuple[float, float], next_point: tuple[float, float]) -> float | None:
@@ -247,10 +223,11 @@ def load_floor_regions(sheets_json: Path) -> list[dict[str, Any]]:
         inspection_regions = sheet.get("inspection_regions") or []
         if not inspection_regions and sheet.get("inspection_region_bbox"):
             inspection_regions = [{"region_id": "R01", "bbox": sheet.get("inspection_region_bbox")}]
-        if not inspection_regions and sheet.get("bbox"):
-            inspection_regions = [{"region_id": "R01", "bbox": sheet.get("bbox")}]
         for index, item in enumerate(inspection_regions, start=1):
             if not isinstance(item, dict):
+                continue
+            source = str(item.get("source") or sheet.get("inspection_region_source") or "")
+            if source in {"sheet_bbox", "sheet_bbox_fallback"} or source.startswith("sheet_bbox"):
                 continue
             raw_bbox = item.get("bbox")
             if not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) != 4:
@@ -259,6 +236,9 @@ def load_floor_regions(sheets_json: Path) -> list[dict[str, Any]]:
             if bbox_tuple[2] <= bbox_tuple[0] or bbox_tuple[3] <= bbox_tuple[1]:
                 continue
             region_id = str(item.get("region_id") or f"R{index:02d}")
+            confidence = safe_float(item.get("confidence"))
+            if confidence is None:
+                confidence = safe_float(sheet.get("inspection_region_confidence")) or 0.0
             regions.append(
                 {
                     "sheet_id": sheet_id,
@@ -268,6 +248,9 @@ def load_floor_regions(sheets_json: Path) -> list[dict[str, Any]]:
                     "full_region_id": f"{sheet_id}:{region_id}",
                     "bbox": bbox_tuple,
                     "polygon": box(*bbox_tuple),
+                    "region_source": source,
+                    "region_confidence": confidence,
+                    "region_evidence": str(item.get("evidence") or sheet.get("inspection_region_evidence") or ""),
                 }
             )
     return regions
@@ -373,15 +356,13 @@ def request_layer_llm(batch: list[dict[str, Any]], *, api_key: str, base_url: st
         "prompt_version": LAYER_LLM_PROMPT_VERSION,
         "important_policy": [
             "Only classify layer semantic relevance.",
-            "Only layers whose layer name, block samples, or text samples clearly mean wall/column/curtain-wall/structural fill may be obstacle_candidate.",
+            "Return obstacle_candidate only when the layer name, block samples, or text samples clearly mean wall, column, curtain wall, structural wall, masonry/concrete wall, or structural filled obstacle.",
             "Positive obstacle evidence includes: WALL, COL, COLUMN, PILLAR, CONC, CONCRETE, MASONRY, BRICK, SHEARWALL, CURTAIN WALL, GLZ/GLZE when it means curtain wall glazing, 墙, 柱, 幕墙, 砌体, 混凝土, 剪力墙.",
             "Do not infer obstacle_candidate from elevator, stair, shaft, room, equipment, window, door, opening, passage, ramp, furniture, annotation, or symbol semantics unless the same layer also explicitly contains wall/column evidence.",
-            "A-EVTR/elevator, stair/staircase/lift, window/door/opening/passage layers are not obstacle layers by themselves.",
             "Dimension, axis, grid, title block, frame, legend, table, and text-only annotation layers are not obstacles.",
         ],
         "roles": {
             "obstacle_candidate": "Layer explicitly means wall, column, curtain wall, masonry/concrete wall, or structural filled obstacle.",
-            "passable_opening": "Door/opening/passage/window-door geometry that should be excluded from obstacle output.",
             "not_obstacle": "Annotation, axis, dimension, title, frame, furniture, symbol, or unrelated layer.",
             "unknown": "Insufficient semantic evidence.",
         },
@@ -391,7 +372,7 @@ def request_layer_llm(batch: list[dict[str, Any]], *, api_key: str, base_url: st
             "decisions": [
                 {
                     "layer": "original layer name",
-                    "role": "obstacle_candidate|passable_opening|not_obstacle|unknown",
+                    "role": "obstacle_candidate|not_obstacle|unknown",
                     "candidate_types": ["wall"],
                     "confidence": 0.0,
                     "reason": "brief semantic reason",
@@ -531,7 +512,7 @@ def write_layer_llm_output(
         "model": model,
         "base_url": base_url,
         "prompt_version": LAYER_LLM_PROMPT_VERSION,
-        "strategy": "llm_layer_hit_direct_output_geometry_fallback_for_unhit_layers",
+        "strategy": "llm_layer_area_geometry_plus_parallel_wall_line_bundles",
         "complete": complete,
         "layer_count": len(summaries),
         "decided_layer_count": sum(1 for item in view.values() if item.get("llm_returned") is True),
@@ -624,7 +605,7 @@ def classify_layers_by_llm(rows: list[dict[str, str]], output_dir: Path) -> dict
         "model": model,
         "base_url": base_url,
         "prompt_version": LAYER_LLM_PROMPT_VERSION,
-        "strategy": "llm_layer_hit_direct_output_geometry_fallback_for_unhit_layers",
+        "strategy": "llm_layer_area_geometry_plus_parallel_wall_line_bundles",
         "complete": True,
         "layer_count": len(summaries),
         "decided_layer_count": sum(1 for item in decisions.values() if item.get("llm_returned") is True),
@@ -643,21 +624,24 @@ def row_candidate_types(row: dict[str, str], decisions: dict[str, dict[str, Any]
     decision = decisions.get(str(row.get("layer") or ""))
     if not decision or decision.get("role") != "obstacle_candidate":
         return []
-    return [str(value) for value in decision.get("candidate_types", []) or []]
+    return [str(value).strip().lower() for value in decision.get("candidate_types", []) or [] if str(value).strip()]
 
 
-def is_passable_opening_layer(row: dict[str, str], decisions: dict[str, dict[str, Any]]) -> bool:
-    decision = decisions.get(str(row.get("layer") or ""))
-    return bool(decision and decision.get("role") == "passable_opening")
-
-
-def needs_geometry_fallback(row: dict[str, str], decisions: dict[str, dict[str, Any]]) -> bool:
-    decision = decisions.get(str(row.get("layer") or ""))
-    if not decision:
+def row_has_wall_semantic(row: dict[str, str], decisions: dict[str, dict[str, Any]]) -> bool:
+    candidate_types = row_candidate_types(row, decisions)
+    if "wall" in candidate_types:
         return True
-    if row_candidate_types(row, decisions) or decision.get("role") in {"passable_opening", "not_obstacle"}:
+    decision = decisions.get(str(row.get("layer") or ""))
+    if not decision or decision.get("role") != "obstacle_candidate":
         return False
-    return decision.get("llm_returned") is not True or decision.get("role") == "unknown"
+    semantic_text = " ".join(
+        [
+            str(row.get("layer") or ""),
+            str(decision.get("reason") or ""),
+            " ".join(str(value) for value in decision.get("candidate_types", []) or []),
+        ]
+    ).upper()
+    return any(term in semantic_text for term in ("WALL", "CURTAIN", "GLZ", "GLZE", "GLAZ", "墙", "幕墙"))
 
 
 def choose_llm_obstacle_type(candidate_types: list[str], entity_type: str) -> str:
@@ -675,67 +659,27 @@ def rows_in_regions(row: dict[str, str], regions: list[dict[str, Any]]) -> list[
     if not bounds:
         return []
     center = Point(*bbox_center(bounds))
+    row_geometries: list[Any] | None = None
     matched = []
     for region in regions:
-        if region["polygon"].contains(center) or bbox_intersects(bounds, region["bbox"]):
+        region_polygon = region["polygon"]
+        if region_polygon.covers(center):
             matched.append(region)
+            continue
+        if not bbox_intersects(bounds, region["bbox"]):
+            continue
+        if row_geometries is None:
+            row_geometries = []
+            row_geometries.extend(polygons_from_row(row, ObstacleConfig()))
+            row_geometries.extend(lines_from_row(row, ObstacleConfig(), min_length=0.0))
+        for geom in row_geometries:
+            try:
+                if geom.intersects(region_polygon):
+                    matched.append(region)
+                    break
+            except Exception:
+                continue
     return matched
-
-
-def pseudo_region_for_row(row: dict[str, str]) -> dict[str, Any]:
-    bounds = bbox_from_row(row) or (0.0, 0.0, 1.0, 1.0)
-    return {
-        "sheet_id": "UNSCOPED",
-        "floor_id": "UNSCOPED",
-        "floor_name": "UNSCOPED",
-        "region_id": "ALL",
-        "full_region_id": "UNSCOPED:ALL",
-        "bbox": bounds,
-        "polygon": box(*bounds),
-    }
-
-
-def primary_region_for_row(row: dict[str, str], regions: list[dict[str, Any]]) -> dict[str, Any]:
-    bounds = bbox_from_row(row)
-    if not bounds:
-        return pseudo_region_for_row(row)
-    center = Point(*bbox_center(bounds))
-    for region in regions:
-        if region["polygon"].contains(center):
-            return region
-    row_box = box(*bounds)
-    best_region: dict[str, Any] | None = None
-    best_area = 0.0
-    for region in regions:
-        try:
-            area = row_box.intersection(region["polygon"]).area
-        except Exception:
-            area = 0.0
-        if area > best_area:
-            best_area = area
-            best_region = region
-    return best_region if best_region is not None and best_area > 0 else pseudo_region_for_row(row)
-
-
-def geom_ratio_in_region(geom: Any, region: dict[str, Any]) -> float:
-    return float(geom.area) / max(float(region["polygon"].area), 1.0)
-
-
-def aspect_ratio(bounds: tuple[float, float, float, float]) -> float:
-    minx, miny, maxx, maxy = bounds
-    width = max(maxx - minx, 1.0)
-    height = max(maxy - miny, 1.0)
-    return max(width / height, height / width)
-
-
-def validate_polygon_obstacle(geom: Any, region: dict[str, Any], config: ObstacleConfig) -> bool:
-    if geom.is_empty or geom.area < config.min_area:
-        return False
-    if geom_ratio_in_region(geom, region) > config.max_region_area_ratio:
-        return False
-    if aspect_ratio(tuple(float(value) for value in geom.bounds)) > config.max_aspect_ratio:
-        return False
-    return True
 
 
 def add_obstacle(
@@ -747,6 +691,11 @@ def add_obstacle(
     obstacle_type: str,
     reason: str,
     confidence: float,
+    semantic_evidence: str = "",
+    geometry_evidence: str = "",
+    topology_evidence: str = "",
+    negative_evidence: str = "",
+    fusion_decision: str = "",
 ) -> None:
     bounds = tuple(float(value) for value in geom.bounds)
     out.append(
@@ -769,6 +718,11 @@ def add_obstacle(
             "color": row.get("color", ""),
             "linetype": row.get("linetype", ""),
             "parent_block_name": row.get("parent_block_name", ""),
+            "semantic_evidence": semantic_evidence,
+            "geometry_evidence": geometry_evidence,
+            "topology_evidence": topology_evidence,
+            "negative_evidence": negative_evidence,
+            "fusion_decision": fusion_decision,
             "bbox_minx": bounds[0],
             "bbox_miny": bounds[1],
             "bbox_maxx": bounds[2],
@@ -779,20 +733,159 @@ def add_obstacle(
     )
 
 
-def llm_direct_geometries_from_row(row: dict[str, str], config: ObstacleConfig) -> list[Any]:
-    polygons = polygons_from_row(row, config)
-    if polygons:
-        return polygons
+def semantic_evidence_for_row(row: dict[str, str], decisions: dict[str, dict[str, Any]]) -> str:
+    decision = decisions.get(str(row.get("layer") or ""), {})
+    role = str(decision.get("role") or "unknown")
+    types = ",".join(str(value) for value in decision.get("candidate_types", []) or [])
+    confidence = decision.get("confidence", "")
+    reason = str(decision.get("reason") or "")
+    return f"layer={row.get('layer','')}; role={role}; types={types}; confidence={confidence}; reason={reason}"
 
-    line_geoms: list[Any] = []
+
+def is_dashed_linetype(row: dict[str, str]) -> bool:
+    text = f"{row.get('linetype', '')} {row.get('geometry_kind', '')}".upper()
+    return any(token in text for token in ("DASH", "HIDDEN", "PHANTOM", "CENTER", "DOT", "虚线"))
+
+
+def open_line_segments_from_row(row: dict[str, str], config: ObstacleConfig) -> list[LineString]:
+    entity_type = str(row.get("entity_type") or "").upper()
+    if entity_type not in {"LINE", "LWPOLYLINE", "POLYLINE"}:
+        return []
+    if str(row.get("is_closed") or "").lower() in {"1", "true"}:
+        return []
+    if is_dashed_linetype(row):
+        return []
+
+    segments: list[LineString] = []
     for line in lines_from_row(row, config, min_length=0.0):
-        try:
-            buffered = line.buffer(config.direct_line_buffer, cap_style=2, join_style=2)
-        except Exception:
-            continue
-        if not buffered.is_empty and buffered.area >= config.min_area:
-            line_geoms.append(buffered)
-    return line_geoms
+        coords = list(line.coords)
+        for start, end in zip(coords, coords[1:]):
+            try:
+                segment = LineString([start, end])
+            except Exception:
+                continue
+            if not segment.is_empty and segment.length > 0:
+                segments.append(segment)
+    return segments
+
+
+def line_unit_vectors(line: LineString) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    start, end = line_endpoint_pair(line)
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length = math.hypot(dx, dy)
+    if length <= 0:
+        return None
+    ux, uy = dx / length, dy / length
+    if ux < 0 or (abs(ux) < 1e-9 and uy < 0):
+        ux, uy = -ux, -uy
+    return (ux, uy), (-uy, ux)
+
+
+def line_angle_deg_mod_180(line: LineString) -> float | None:
+    vectors = line_unit_vectors(line)
+    if vectors is None:
+        return None
+    (ux, uy), _normal = vectors
+    angle = math.degrees(math.atan2(uy, ux))
+    if angle < 0:
+        angle += 180.0
+    if angle >= 180.0:
+        angle -= 180.0
+    return angle
+
+
+def angle_distance_mod_180(a: float, b: float) -> float:
+    diff = abs(a - b) % 180.0
+    return min(diff, 180.0 - diff)
+
+
+def project_point(point: tuple[float, float], axis: tuple[float, float]) -> float:
+    return point[0] * axis[0] + point[1] * axis[1]
+
+
+def projection_interval(line: LineString, axis: tuple[float, float]) -> tuple[float, float]:
+    values = [project_point((float(x), float(y)), axis) for x, y in line.coords]
+    return min(values), max(values)
+
+
+def average_projection(line: LineString, axis: tuple[float, float]) -> float:
+    values = [project_point((float(x), float(y)), axis) for x, y in line.coords]
+    return sum(values) / len(values)
+
+
+def overlap_interval(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float] | None:
+    start = max(a[0], b[0])
+    end = min(a[1], b[1])
+    if end <= start:
+        return None
+    return start, end
+
+
+def point_from_axes(
+    along: float,
+    across: float,
+    direction: tuple[float, float],
+    normal: tuple[float, float],
+) -> tuple[float, float]:
+    return (
+        along * direction[0] + across * normal[0],
+        along * direction[1] + across * normal[1],
+    )
+
+
+def parallel_wall_band_from_pair(
+    line_a: LineString,
+    line_b: LineString,
+    config: ObstacleConfig,
+) -> Polygon | None:
+    angle_a = line_angle_deg_mod_180(line_a)
+    angle_b = line_angle_deg_mod_180(line_b)
+    if angle_a is None or angle_b is None:
+        return None
+    if angle_distance_mod_180(angle_a, angle_b) > config.parallel_angle_tolerance_deg:
+        return None
+
+    vectors = line_unit_vectors(line_a)
+    if vectors is None:
+        return None
+    direction, normal = vectors
+    interval = overlap_interval(projection_interval(line_a, direction), projection_interval(line_b, direction))
+    if interval is None:
+        return None
+    overlap = interval[1] - interval[0]
+    min_length = min(line_a.length, line_b.length)
+    if overlap <= min_length * config.min_projection_overlap_ratio:
+        return None
+
+    across_a = average_projection(line_a, normal)
+    across_b = average_projection(line_b, normal)
+    width = abs(across_a - across_b)
+    if width <= 0 or width > overlap * config.max_wall_width_to_overlap_ratio:
+        return None
+
+    low = min(across_a, across_b)
+    high = max(across_a, across_b)
+    try:
+        polygon = Polygon(
+            [
+                point_from_axes(interval[0], low, direction, normal),
+                point_from_axes(interval[1], low, direction, normal),
+                point_from_axes(interval[1], high, direction, normal),
+                point_from_axes(interval[0], high, direction, normal),
+            ]
+        )
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        if polygon.is_empty or polygon.area <= config.min_area:
+            return None
+        return polygon
+    except Exception:
+        return None
+
+
+def llm_area_geometries_from_row(row: dict[str, str], config: ObstacleConfig) -> list[Any]:
+    return polygons_from_row(row, config)
 
 
 def detect_llm_hit_obstacles(
@@ -801,7 +894,7 @@ def detect_llm_hit_obstacles(
     decisions: dict[str, dict[str, Any]],
     config: ObstacleConfig,
 ) -> list[dict[str, Any]]:
-    """LLM obstacle layers are trusted semantically; geometry is only converted for output."""
+    """Output closed/area geometry from LLM-hit obstacle layers."""
 
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -811,55 +904,147 @@ def detect_llm_hit_obstacles(
         decision = decisions.get(str(row.get("layer") or ""), {})
         entity_type = str(row.get("entity_type") or "").upper()
         obstacle_type = choose_llm_obstacle_type(candidate_types, entity_type)
-        geometries = llm_direct_geometries_from_row(row, config)
+        geometries = llm_area_geometries_from_row(row, config)
         if not geometries:
             continue
-        region = primary_region_for_row(row, regions)
+        matched_regions = rows_in_regions(row, regions)
+        if not matched_regions:
+            continue
         for geom in geometries:
-            parts = list(geom.geoms) if isinstance(geom, MultiPolygon) else [geom]
-            for part in parts:
-                if not isinstance(part, Polygon) or part.is_empty:
+            for region in matched_regions:
+                try:
+                    clipped = geom.intersection(region["polygon"])
+                except Exception:
                     continue
-                add_obstacle(
-                    out,
-                    row=row,
-                    region=region,
-                    geom=part,
-                    obstacle_type=obstacle_type,
-                    reason="llm_layer_obstacle_hit_direct_geometry_unfiltered_review",
-                    confidence=float(decision.get("confidence") or 0.9),
-                )
+                parts = list(clipped.geoms) if isinstance(clipped, MultiPolygon) else [clipped]
+                for part in parts:
+                    if not isinstance(part, Polygon) or part.is_empty:
+                        continue
+                    add_obstacle(
+                        out,
+                        row=row,
+                        region=region,
+                        geom=part,
+                        obstacle_type=obstacle_type,
+                        reason="llm_layer_obstacle_hit_direct_geometry_clipped_to_inspection_region",
+                        confidence=float(decision.get("confidence") or 0.9),
+                        semantic_evidence=semantic_evidence_for_row(row, decisions),
+                        geometry_evidence="llm_hit_layer_area_geometry_clipped_to_inspection_region",
+                        fusion_decision="accepted_by_llm_layer_area_geometry_then_region_clip",
+                    )
     return out
 
 
-def single_direct_line_candidate(
-    item: dict[str, Any],
-    rows_by_object_id: dict[str, dict[str, str]],
+def detect_parallel_wall_line_obstacles(
+    rows: list[dict[str, str]],
+    regions: list[dict[str, Any]],
+    decisions: dict[str, dict[str, Any]],
     config: ObstacleConfig,
-) -> tuple[dict[str, str], LineString] | None:
-    """Return the original single line behind a direct LLM wall obstacle."""
+) -> list[dict[str, Any]]:
+    """Build wall obstacle polygons only from trusted-layer parallel line bundles."""
 
-    if item.get("obstacle_type") != "wall":
-        return None
-    if item.get("reason") != "llm_layer_obstacle_hit_direct_geometry_unfiltered_review":
-        return None
-    row = rows_by_object_id.get(str(item.get("object_id") or ""))
-    if not row:
-        return None
-    entity_type = str(row.get("entity_type") or "").upper()
-    if entity_type not in {"LINE", "LWPOLYLINE", "POLYLINE"}:
-        return None
-    if str(row.get("is_closed") or "") in {"1", "true", "TRUE"}:
-        return None
-    if polygons_from_row(row, config):
-        return None
-    lines = lines_from_row(row, config, min_length=0.0)
-    if len(lines) != 1:
-        return None
-    coords = list(lines[0].coords)
-    if len(coords) != 2:
-        return None
-    return row, lines[0]
+    wall_segments_by_layer: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not row_has_wall_semantic(row, decisions):
+            continue
+        for segment in open_line_segments_from_row(row, config):
+            angle = line_angle_deg_mod_180(segment)
+            vectors = line_unit_vectors(segment)
+            if angle is None or vectors is None:
+                continue
+            wall_segments_by_layer[str(row.get("layer") or "")].append(
+                {
+                    "row": row,
+                    "line": segment,
+                    "angle": angle,
+                    "direction": vectors[0],
+                    "normal": vectors[1],
+                }
+            )
+
+    out: list[dict[str, Any]] = []
+    used_pairs: set[tuple[str, str]] = set()
+    for layer, segments in wall_segments_by_layer.items():
+        if len(segments) < 2:
+            continue
+        segments = sorted(segments, key=lambda item: (round(item["angle"] / config.parallel_angle_tolerance_deg), item["line"].bounds))
+        for index, first in enumerate(segments):
+            best: tuple[float, int, Polygon] | None = None
+            line_a = first["line"]
+            direction = first["direction"]
+            normal = first["normal"]
+            interval_a = projection_interval(line_a, direction)
+            across_a = average_projection(line_a, normal)
+            for other_index in range(index + 1, len(segments)):
+                second = segments[other_index]
+                if angle_distance_mod_180(first["angle"], second["angle"]) > config.parallel_angle_tolerance_deg:
+                    continue
+                line_b = second["line"]
+                interval = overlap_interval(interval_a, projection_interval(line_b, direction))
+                if interval is None:
+                    continue
+                overlap = interval[1] - interval[0]
+                if overlap <= min(line_a.length, line_b.length) * config.min_projection_overlap_ratio:
+                    continue
+                distance = abs(across_a - average_projection(line_b, normal))
+                if distance <= 0 or distance > overlap * config.max_wall_width_to_overlap_ratio:
+                    continue
+                polygon = parallel_wall_band_from_pair(line_a, line_b, config)
+                if polygon is None:
+                    continue
+                if best is None or distance < best[0]:
+                    best = (distance, other_index, polygon)
+            if best is None:
+                continue
+
+            other_index = best[1]
+            second = segments[other_index]
+            row_a = first["row"]
+            row_b = second["row"]
+            pair_key = tuple(
+                sorted(
+                    (
+                        f"{row_a.get('object_id') or ''}:{index}:{tuple(round(v, 3) for v in line_a.bounds)}",
+                        f"{row_b.get('object_id') or ''}:{other_index}:{tuple(round(v, 3) for v in second['line'].bounds)}",
+                    )
+                )
+            )
+            if pair_key in used_pairs:
+                continue
+            used_pairs.add(pair_key)
+
+            decision = decisions.get(layer, {})
+            polygon = best[2]
+            for region in regions:
+                try:
+                    if not polygon.intersects(region["polygon"]):
+                        continue
+                    clipped = polygon.intersection(region["polygon"])
+                except Exception:
+                    continue
+                parts = list(clipped.geoms) if isinstance(clipped, MultiPolygon) else [clipped]
+                for part in parts:
+                    if not isinstance(part, Polygon) or part.is_empty or part.area <= config.min_area:
+                        continue
+                    add_obstacle(
+                        out,
+                        row=row_a,
+                        region=region,
+                        geom=part,
+                        obstacle_type="wall",
+                        reason="llm_wall_layer_parallel_line_bundle_clipped_to_inspection_region",
+                        confidence=float(decision.get("confidence") or 0.9),
+                        semantic_evidence=semantic_evidence_for_row(row_a, decisions),
+                        geometry_evidence=(
+                            "parallel_wall_line_bundle;"
+                            f"paired_object_id={row_b.get('object_id','')};"
+                            f"paired_layer={row_b.get('layer','')};"
+                            "non_dashed_open_straight_lines"
+                        ),
+                        topology_evidence="direction_parallel;local_adjacent;projection_overlap;trusted_wall_layer",
+                        fusion_decision="accepted_by_llm_wall_layer_and_parallel_line_bundle",
+                    )
+    return out
 
 
 def line_endpoint_pair(line: LineString) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -869,536 +1054,6 @@ def line_endpoint_pair(line: LineString) -> tuple[tuple[float, float], tuple[flo
 
 def point_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
-
-
-def nearest_endpoint_distance(
-    line_a: LineString,
-    line_b: LineString,
-) -> tuple[float, tuple[float, float]]:
-    best_dist = float("inf")
-    best_joint = (0.0, 0.0)
-    for point_a in line_endpoint_pair(line_a):
-        for point_b in line_endpoint_pair(line_b):
-            dist = point_distance(point_a, point_b)
-            if dist < best_dist:
-                best_dist = dist
-                best_joint = ((point_a[0] + point_b[0]) / 2.0, (point_a[1] + point_b[1]) / 2.0)
-    return best_dist, best_joint
-
-
-def line_other_endpoint(line: LineString, joint: tuple[float, float]) -> tuple[float, float]:
-    start, end = line_endpoint_pair(line)
-    return end if point_distance(start, joint) <= point_distance(end, joint) else start
-
-
-def connected_line_angle(line_a: LineString, line_b: LineString, joint: tuple[float, float]) -> float | None:
-    return joint_angle_deg(line_other_endpoint(line_a, joint), joint, line_other_endpoint(line_b, joint))
-
-
-def should_filter_connected_line_angle(angle: float, config: ObstacleConfig) -> bool:
-    return (
-        config.acute_connected_line_min_angle_deg <= angle <= config.acute_connected_line_max_angle_deg
-        or config.obtuse_connected_line_min_angle_deg <= angle <= config.obtuse_connected_line_max_angle_deg
-    )
-
-
-def parallel_bundle_support_indices(
-    group: list[tuple[int, dict[str, Any], dict[str, str], LineString]],
-    config: ObstacleConfig,
-) -> set[int]:
-    if len(group) < config.min_parallel_lines:
-        return set()
-
-    angle_buckets: list[list[int]] = []
-    for group_index, (_index, _item, _row, line) in enumerate(group):
-        angle = normalized_angle(line)
-        for bucket in angle_buckets:
-            if angle_delta(normalized_angle(group[bucket[0]][3]), angle) <= config.parallel_angle_tolerance_deg:
-                bucket.append(group_index)
-                break
-        else:
-            angle_buckets.append([group_index])
-
-    supported: set[int] = set()
-    for bucket in angle_buckets:
-        if len(bucket) < config.min_parallel_lines:
-            continue
-        base_angle = normalized_angle(group[bucket[0]][3])
-        direction, normal = direction_and_normal(base_angle)
-        meta: list[tuple[int, float, tuple[float, float]]] = []
-        for group_index in bucket:
-            line = group[group_index][3]
-            meta.append((group_index, line_offset(line, normal), line_projection(line, direction)))
-        meta.sort(key=lambda item: item[1])
-
-        for pos, (group_index, offset, interval) in enumerate(meta):
-            support_count = 1
-            for other_pos in range(pos - 1, -1, -1):
-                other_index, other_offset, other_interval = meta[other_pos]
-                spacing = offset - other_offset
-                if spacing > config.max_parallel_bundle_width:
-                    break
-                if spacing <= 0:
-                    continue
-                overlap = min(interval[1], other_interval[1]) - max(interval[0], other_interval[0])
-                if overlap >= config.min_parallel_overlap:
-                    support_count += 1
-                    if support_count >= config.min_parallel_lines:
-                        supported.add(group_index)
-                        supported.add(other_index)
-                        break
-            if group_index in supported:
-                continue
-            for other_pos in range(pos + 1, len(meta)):
-                other_index, other_offset, other_interval = meta[other_pos]
-                spacing = other_offset - offset
-                if spacing > config.max_parallel_bundle_width:
-                    break
-                if spacing <= 0:
-                    continue
-                overlap = min(interval[1], other_interval[1]) - max(interval[0], other_interval[0])
-                if overlap >= config.min_parallel_overlap:
-                    support_count += 1
-                    if support_count >= config.min_parallel_lines:
-                        supported.add(group_index)
-                        supported.add(other_index)
-                        break
-    return supported
-
-
-def filter_connected_obtuse_single_line_obstacles(
-    obstacles: list[dict[str, Any]],
-    rows: list[dict[str, str]],
-    config: ObstacleConfig,
-) -> list[dict[str, Any]]:
-    """Remove direct single-line wall artifacts joined by an obtuse angle across entities."""
-
-    rows_by_object_id = {str(row.get("object_id") or ""): row for row in rows if row.get("object_id")}
-    groups: dict[tuple[str, str, str], list[tuple[int, dict[str, Any], dict[str, str], LineString]]] = defaultdict(list)
-    for index, item in enumerate(obstacles):
-        candidate = single_direct_line_candidate(item, rows_by_object_id, config)
-        if candidate is None:
-            continue
-        row, line = candidate
-        groups[same_line_attr(row)].append((index, item, row, line))
-
-    remove_indices: set[int] = set()
-    cell_size = max(config.connected_endpoint_tolerance, 1.0)
-    for group in groups.values():
-        if len(group) < 2:
-            continue
-        parallel_support = parallel_bundle_support_indices(group, config)
-        endpoint_grid: dict[tuple[int, int], list[tuple[int, tuple[float, float]]]] = defaultdict(list)
-        for group_index, (_index, _item, _row, line) in enumerate(group):
-            for endpoint in line_endpoint_pair(line):
-                cell = (math.floor(endpoint[0] / cell_size), math.floor(endpoint[1] / cell_size))
-                endpoint_grid[cell].append((group_index, endpoint))
-
-        checked_pairs: set[tuple[int, int]] = set()
-        for group_index, (_index, _item, _row, line) in enumerate(group):
-            for endpoint in line_endpoint_pair(line):
-                cx = math.floor(endpoint[0] / cell_size)
-                cy = math.floor(endpoint[1] / cell_size)
-                for dx in (-1, 0, 1):
-                    for dy in (-1, 0, 1):
-                        for other_group_index, _other_endpoint in endpoint_grid.get((cx + dx, cy + dy), []):
-                            if other_group_index == group_index:
-                                continue
-                            pair_key = tuple(sorted((group_index, other_group_index)))
-                            if pair_key in checked_pairs:
-                                continue
-                            checked_pairs.add(pair_key)
-                            other_line = group[other_group_index][3]
-                            distance, joint = nearest_endpoint_distance(line, other_line)
-                            if distance > config.connected_endpoint_tolerance:
-                                continue
-                            angle = connected_line_angle(line, other_line, joint)
-                            if angle is None:
-                                continue
-                            if not should_filter_connected_line_angle(angle, config):
-                                continue
-                            if group_index in parallel_support:
-                                continue
-                            if other_group_index in parallel_support:
-                                continue
-                            remove_indices.add(group[group_index][0])
-                            remove_indices.add(group[other_group_index][0])
-
-    if not remove_indices:
-        return obstacles
-    return [item for index, item in enumerate(obstacles) if index not in remove_indices]
-
-
-def detect_polygon_and_fill_obstacles(
-    rows: list[dict[str, str]],
-    regions: list[dict[str, Any]],
-    decisions: dict[str, dict[str, Any]],
-    config: ObstacleConfig,
-) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        candidate_types = row_candidate_types(row, decisions)
-        if not candidate_types:
-            continue
-        entity_type = str(row.get("entity_type") or "").upper()
-        polygons = polygons_from_row(row, config)
-        if not polygons:
-            continue
-        for region in rows_in_regions(row, regions):
-            for poly in polygons:
-                clipped = poly.intersection(region["polygon"])
-                if isinstance(clipped, MultiPolygon):
-                    geoms = list(clipped.geoms)
-                else:
-                    geoms = [clipped]
-                for geom in geoms:
-                    if not isinstance(geom, Polygon):
-                        continue
-                    if not validate_polygon_obstacle(geom, region, config):
-                        continue
-                    if "column" in candidate_types and (entity_type == "CIRCLE" or aspect_ratio(tuple(geom.bounds)) <= 4.0):
-                        add_obstacle(
-                            out,
-                            row=row,
-                            region=region,
-                            geom=geom,
-                            obstacle_type="column",
-                            reason="llm_layer_column_candidate_geometry_circle_or_near_rect",
-                            confidence=0.86,
-                        )
-                    elif "wall" in candidate_types:
-                        add_obstacle(
-                            out,
-                            row=row,
-                            region=region,
-                            geom=geom,
-                            obstacle_type="wall",
-                            reason="llm_layer_wall_candidate_polygon_or_hatch",
-                            confidence=0.82,
-                        )
-                    elif "filled_obstacle" in candidate_types:
-                        add_obstacle(
-                            out,
-                            row=row,
-                            region=region,
-                            geom=geom,
-                            obstacle_type="filled_obstacle",
-                            reason="llm_layer_fill_candidate_polygon_or_hatch",
-                            confidence=0.78,
-                        )
-    return out
-
-
-def detect_geometry_fallback_polygon_obstacles(
-    rows: list[dict[str, str]],
-    regions: list[dict[str, Any]],
-    decisions: dict[str, dict[str, Any]],
-    config: ObstacleConfig,
-) -> list[dict[str, Any]]:
-    """Geometry-only fallback for layers not semantically hit by the LLM."""
-
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        if not needs_geometry_fallback(row, decisions):
-            continue
-        entity_type = str(row.get("entity_type") or "").upper()
-        polygons = polygons_from_row(row, config)
-        if not polygons:
-            continue
-        for region in rows_in_regions(row, regions):
-            for poly in polygons:
-                clipped = poly.intersection(region["polygon"])
-                geoms = list(clipped.geoms) if isinstance(clipped, MultiPolygon) else [clipped]
-                for geom in geoms:
-                    if not isinstance(geom, Polygon):
-                        continue
-                    if not validate_polygon_obstacle(geom, region, config):
-                        continue
-                    if entity_type == "CIRCLE" or aspect_ratio(tuple(geom.bounds)) <= 4.0:
-                        obstacle_type = "column"
-                        reason = "geometry_fallback_closed_or_round_column"
-                        confidence = 0.68
-                    else:
-                        obstacle_type = "filled_obstacle"
-                        reason = "geometry_fallback_valid_polygon_or_fill"
-                        confidence = 0.62
-                    add_obstacle(
-                        out,
-                        row=row,
-                        region=region,
-                        geom=geom,
-                        obstacle_type=obstacle_type,
-                        reason=reason,
-                        confidence=confidence,
-                    )
-    return out
-
-
-def normalized_angle(line: LineString) -> float:
-    (x1, y1), (x2, y2) = line.coords[0], line.coords[-1]
-    return math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
-
-
-def angle_delta(a: float, b: float) -> float:
-    value = abs((a - b) % 180.0)
-    return min(value, 180.0 - value)
-
-
-def direction_and_normal(angle: float) -> tuple[tuple[float, float], tuple[float, float]]:
-    rad = math.radians(angle)
-    direction = (math.cos(rad), math.sin(rad))
-    normal = (-math.sin(rad), math.cos(rad))
-    return direction, normal
-
-
-def line_offset(line: LineString, normal: tuple[float, float]) -> float:
-    x, y = line.interpolate(0.5, normalized=True).coords[0]
-    return x * normal[0] + y * normal[1]
-
-
-def line_projection(line: LineString, direction: tuple[float, float]) -> tuple[float, float]:
-    values = [x * direction[0] + y * direction[1] for x, y in line.coords]
-    return min(values), max(values)
-
-
-def same_line_attr(row: dict[str, str]) -> tuple[str, str, str]:
-    return str(row.get("layer") or ""), str(row.get("color") or ""), str(row.get("linetype") or "")
-
-
-def build_parallel_wall_polygon(lines: list[LineString], config: ObstacleConfig) -> Polygon | None:
-    if not (config.min_parallel_lines <= len(lines) <= config.max_parallel_lines):
-        return None
-    angles = [normalized_angle(line) for line in lines]
-    base = angles[0]
-    if any(angle_delta(base, angle) > config.parallel_angle_tolerance_deg for angle in angles[1:]):
-        return None
-    direction, normal = direction_and_normal(base)
-    offsets = sorted(line_offset(line, normal) for line in lines)
-    width = offsets[-1] - offsets[0]
-    if width <= 0 or width > config.max_parallel_bundle_width:
-        return None
-    if len(offsets) >= 3:
-        gaps = [b - a for a, b in zip(offsets, offsets[1:])]
-        avg_gap = sum(gaps) / len(gaps)
-        if avg_gap <= 0:
-            return None
-        if max(abs(gap - avg_gap) for gap in gaps) > max(10.0, avg_gap * config.parallel_spacing_tolerance_ratio):
-            return None
-    intervals = [line_projection(line, direction) for line in lines]
-    start = max(item[0] for item in intervals)
-    end = min(item[1] for item in intervals)
-    if end - start < config.min_parallel_overlap:
-        starts = sorted(item[0] for item in intervals)
-        ends = sorted(item[1] for item in intervals)
-        start = starts[len(starts) // 2]
-        end = ends[len(ends) // 2]
-    if end <= start or end - start < config.min_parallel_overlap:
-        return None
-
-    pad = max(15.0, min(100.0, width * 0.15))
-    o1 = offsets[0] - pad
-    o2 = offsets[-1] + pad
-    coords = [
-        (direction[0] * start + normal[0] * o1, direction[1] * start + normal[1] * o1),
-        (direction[0] * end + normal[0] * o1, direction[1] * end + normal[1] * o1),
-        (direction[0] * end + normal[0] * o2, direction[1] * end + normal[1] * o2),
-        (direction[0] * start + normal[0] * o2, direction[1] * start + normal[1] * o2),
-    ]
-    try:
-        poly = Polygon(coords)
-        if not poly.is_valid:
-            poly = poly.buffer(0)
-        return poly if not poly.is_empty and poly.area >= config.min_area else None
-    except Exception:
-        return None
-
-
-def known_wall_union(obstacles: list[dict[str, Any]]) -> dict[str, Any]:
-    grouped: dict[str, list[Any]] = defaultdict(list)
-    for item in obstacles:
-        if item["obstacle_type"] == "wall":
-            grouped[item["full_region_id"]].append(item["geometry"])
-    return {key: unary_union(values) for key, values in grouped.items() if values}
-
-
-def connected_to_wall(geom: Any, region_id: str, walls: dict[str, Any], config: ObstacleConfig) -> bool:
-    wall = walls.get(region_id)
-    if wall is None or wall.is_empty:
-        return True
-    if geom.intersects(wall):
-        return True
-    return geom.buffer(config.wall_connect_buffer).intersects(wall)
-
-
-def detect_parallel_wall_obstacles(
-    rows: list[dict[str, str]],
-    regions: list[dict[str, Any]],
-    decisions: dict[str, dict[str, Any]],
-    base_wall_union: dict[str, Any],
-    config: ObstacleConfig,
-    *,
-    fallback_only: bool = False,
-) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, tuple[str, str, str]], list[tuple[dict[str, str], LineString]]] = defaultdict(list)
-    for row in rows:
-        if fallback_only:
-            if not needs_geometry_fallback(row, decisions):
-                continue
-        elif "wall" not in row_candidate_types(row, decisions):
-            continue
-        entity_type = str(row.get("entity_type") or "").upper()
-        if entity_type not in {"LINE", "LWPOLYLINE", "POLYLINE"}:
-            continue
-        regions_for_row = rows_in_regions(row, regions)
-        if not regions_for_row:
-            continue
-        for line in lines_from_row(row, config):
-            for segment in split_to_segments(line, config):
-                for region in regions_for_row:
-                    grouped[(region["full_region_id"], same_line_attr(row))].append((row, segment))
-
-    region_by_id = {region["full_region_id"]: region for region in regions}
-    out: list[dict[str, Any]] = []
-    accepted: list[Any] = []
-    for (region_id, _attr), items in grouped.items():
-        if len(items) < config.min_parallel_lines:
-            continue
-        angle_groups: list[list[tuple[dict[str, str], LineString]]] = []
-        for row, segment in items:
-            angle = normalized_angle(segment)
-            for bucket in angle_groups:
-                if angle_delta(normalized_angle(bucket[0][1]), angle) <= config.parallel_angle_tolerance_deg:
-                    bucket.append((row, segment))
-                    break
-            else:
-                angle_groups.append([(row, segment)])
-
-        region = region_by_id.get(region_id)
-        if not region:
-            continue
-        for bucket in angle_groups:
-            base_angle = normalized_angle(bucket[0][1])
-            _direction, normal = direction_and_normal(base_angle)
-            bucket = sorted(bucket, key=lambda item: line_offset(item[1], normal))
-            for size in range(min(config.max_parallel_lines, len(bucket)), config.min_parallel_lines - 1, -1):
-                for start in range(0, len(bucket) - size + 1):
-                    window = bucket[start:start + size]
-                    poly = build_parallel_wall_polygon([item[1] for item in window], config)
-                    if poly is None:
-                        continue
-                    clipped = poly.intersection(region["polygon"])
-                    if not validate_polygon_obstacle(clipped, region, config):
-                        continue
-                    if not connected_to_wall(clipped, region_id, base_wall_union, config):
-                        continue
-                    if any(clipped.intersection(item).area / max(clipped.area, 1.0) > 0.75 for item in accepted):
-                        continue
-                    add_obstacle(
-                        out,
-                        row=window[0][0],
-                        region=region,
-                        geom=clipped,
-                        obstacle_type="wall",
-                        reason=(
-                            "geometry_fallback_parallel_line_topology"
-                            if fallback_only
-                            else "llm_layer_wall_candidate_parallel_line_topology"
-                        ),
-                        confidence=0.66 if fallback_only else 0.74,
-                    )
-                    accepted.append(clipped)
-    return out
-
-
-def opening_union_by_region(
-    rows: list[dict[str, str]],
-    regions: list[dict[str, Any]],
-    decisions: dict[str, dict[str, Any]],
-    config: ObstacleConfig,
-) -> dict[str, Any]:
-    grouped: dict[str, list[Any]] = defaultdict(list)
-    for row in rows:
-        decision = decisions.get(str(row.get("layer") or ""))
-        if not decision or decision.get("role") != "passable_opening":
-            continue
-        bounds = bbox_from_row(row)
-        if not bounds:
-            continue
-        mask = box(*bounds).buffer(config.opening_mask_buffer)
-        for region in rows_in_regions(row, regions):
-            grouped[region["full_region_id"]].append(mask)
-    return {key: unary_union(values) for key, values in grouped.items() if values}
-
-
-def subtract_openings(obstacles: list[dict[str, Any]], openings: dict[str, Any], config: ObstacleConfig) -> list[dict[str, Any]]:
-    cleaned: list[dict[str, Any]] = []
-    for item in obstacles:
-        geom = item["geometry"]
-        opening = openings.get(item["full_region_id"])
-        if opening is not None and not opening.is_empty:
-            try:
-                geom = geom.difference(opening)
-            except Exception:
-                pass
-        geoms = list(geom.geoms) if isinstance(geom, MultiPolygon) else [geom]
-        for part in geoms:
-            if not isinstance(part, Polygon) or part.is_empty or part.area < config.min_area:
-                continue
-            copy = dict(item)
-            copy["geometry"] = part
-            bounds = tuple(float(value) for value in part.bounds)
-            copy.update(
-                {
-                    "bbox_minx": bounds[0],
-                    "bbox_miny": bounds[1],
-                    "bbox_maxx": bounds[2],
-                    "bbox_maxy": bounds[3],
-                    "area": float(part.area),
-                }
-            )
-            cleaned.append(copy)
-    return cleaned
-
-
-def dedupe_obstacles(obstacles: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    kept: list[dict[str, Any]] = []
-    grid: dict[tuple[str, str, int, int], list[int]] = defaultdict(list)
-    cell_size = 2000.0
-
-    def cells_for_bounds(bounds: tuple[float, float, float, float]) -> list[tuple[int, int]]:
-        minx, miny, maxx, maxy = bounds
-        ix1 = math.floor(minx / cell_size)
-        iy1 = math.floor(miny / cell_size)
-        ix2 = math.floor(maxx / cell_size)
-        iy2 = math.floor(maxy / cell_size)
-        return [(ix, iy) for ix in range(ix1, ix2 + 1) for iy in range(iy1, iy2 + 1)]
-
-    for item in sorted(obstacles, key=lambda value: (value["confidence"], value["area"]), reverse=True):
-        geom = item["geometry"]
-        duplicate = False
-        region_id = str(item["full_region_id"])
-        obstacle_type = str(item["obstacle_type"])
-        candidate_indices: set[int] = set()
-        item_cells = cells_for_bounds(tuple(float(value) for value in geom.bounds))
-        for ix, iy in item_cells:
-            candidate_indices.update(grid.get((region_id, obstacle_type, ix, iy), []))
-        for kept_index in candidate_indices:
-            existing = kept[kept_index]
-            if existing["full_region_id"] != item["full_region_id"]:
-                continue
-            inter = geom.intersection(existing["geometry"]).area
-            if inter / max(min(geom.area, existing["geometry"].area), 1.0) > 0.75:
-                duplicate = True
-                break
-        if duplicate:
-            continue
-        copy = dict(item)
-        copy["obstacle_id"] = f"OBS_{len(kept) + 1:06d}"
-        kept.append(copy)
-        kept_index = len(kept) - 1
-        for ix, iy in item_cells:
-            grid[(region_id, obstacle_type, ix, iy)].append(kept_index)
-    return kept
 
 
 def obstacle_csv_row(item: dict[str, Any]) -> dict[str, Any]:
@@ -1412,7 +1067,8 @@ def write_obstacle_csv(path: Path, obstacles: list[dict[str, Any]]) -> None:
         "obstacle_id", "object_id", "handle", "source", "sheet_id", "floor_id",
         "floor_name", "region_id", "full_region_id", "obstacle_type", "reason",
         "confidence", "layer", "entity_type", "geometry_kind", "color", "linetype",
-        "parent_block_name", "bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy",
+        "parent_block_name", "semantic_evidence", "geometry_evidence", "topology_evidence",
+        "negative_evidence", "fusion_decision", "bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy",
         "area",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1493,30 +1149,121 @@ def add_label(msp: Any, text: str, point: tuple[float, float], height: float, la
         entity.dxf.insert = point
 
 
-def write_obstacle_review_dxf(input_dxf: Path, output_dxf: Path, obstacles: list[dict[str, Any]]) -> Path:
+def paired_object_ids_from_evidence(value: Any) -> list[str]:
+    return [item.strip() for item in re.findall(r"paired_object_id=([^;]+)", str(value or "")) if item.strip()]
+
+
+def flatten_review_geometries(geom: Any, geom_types: set[str]) -> list[Any]:
+    if geom is None:
+        return []
+    try:
+        if geom.is_empty:
+            return []
+    except Exception:
+        return []
+    geom_type = str(getattr(geom, "geom_type", ""))
+    if geom_type in geom_types:
+        return [geom]
+    parts: list[Any] = []
+    for part in getattr(geom, "geoms", []) or []:
+        parts.extend(flatten_review_geometries(part, geom_types))
+    return parts
+
+
+def clip_review_geometry(geom: Any, clip_geom: Any) -> Any:
+    try:
+        # The generated obstacle geometry is already clipped to the inspection
+        # region.  A tiny buffer keeps original CAD lines that lie exactly on the
+        # generated polygon boundary from disappearing during intersection.
+        return geom.intersection(clip_geom.buffer(1e-6))
+    except Exception:
+        return geom
+
+
+def draw_review_line(msp: Any, line: LineString, layer: str, color: int) -> bool:
+    coords = [(float(x), float(y)) for x, y in line.coords]
+    if len(coords) < 2:
+        return False
+    entity = msp.add_lwpolyline(coords, close=False, dxfattribs={"layer": layer, "color": color})
+    try:
+        entity.dxf.const_width = 30
+    except Exception:
+        pass
+    return True
+
+
+def draw_review_polygon(msp: Any, poly: Polygon, layer: str, color: int) -> bool:
+    if poly.is_empty:
+        return False
+    coords = [(float(x), float(y)) for x, y in poly.exterior.coords]
+    if len(coords) < 4:
+        return False
+    entity = msp.add_lwpolyline(coords, close=True, dxfattribs={"layer": layer, "color": color})
+    try:
+        entity.dxf.const_width = 30
+    except Exception:
+        pass
+    return True
+
+
+def draw_review_source_row(msp: Any, row: dict[str, str], clip_geom: Any, layer: str, color: int) -> int:
+    drawn = 0
+    for line in lines_from_row(row, ObstacleConfig(), min_length=0.0):
+        clipped = clip_review_geometry(line, clip_geom)
+        for part in flatten_review_geometries(clipped, {"LineString"}):
+            if getattr(part, "length", 0.0) > 0 and draw_review_line(msp, part, layer, color):
+                drawn += 1
+    if drawn:
+        return drawn
+
+    for poly in polygons_from_row(row, ObstacleConfig()):
+        clipped = clip_review_geometry(poly, clip_geom)
+        for part in flatten_review_geometries(clipped, {"Polygon"}):
+            if draw_review_polygon(msp, part, layer, color):
+                drawn += 1
+    return drawn
+
+
+def write_obstacle_review_dxf(
+    input_dxf: Path,
+    output_dxf: Path,
+    obstacles: list[dict[str, Any]],
+    source_rows: list[dict[str, str]] | None = None,
+) -> Path:
     doc = ezdxf.readfile(input_dxf)
     msp = doc.modelspace()
     add_layer(doc, WALL_LAYER, 1)
-    add_layer(doc, COLUMN_LAYER, 1)
-    add_layer(doc, FILL_LAYER, 1)
+    add_layer(doc, COLUMN_LAYER, 5)
+    add_layer(doc, FILL_LAYER, 3)
     add_layer(doc, TEXT_LAYER, 1)
     layer_by_type = {"wall": WALL_LAYER, "column": COLUMN_LAYER, "filled_obstacle": FILL_LAYER}
-    color_by_type = {"wall": 1, "column": 1, "filled_obstacle": 1}
+    color_by_type = {"wall": 1, "column": 5, "filled_obstacle": 3}
+    source_by_id = {str(row.get("object_id") or ""): row for row in source_rows or [] if row.get("object_id")}
 
     for index, item in enumerate(obstacles, start=1):
         layer = layer_by_type.get(item["obstacle_type"], WALL_LAYER)
         color = color_by_type.get(item["obstacle_type"], 1)
         geom = item["geometry"]
-        polygons = list(geom.geoms) if isinstance(geom, MultiPolygon) else [geom]
-        for poly in polygons:
-            if not isinstance(poly, Polygon) or poly.is_empty:
+        drawn = 0
+        source_ids = [str(item.get("object_id") or "")]
+        if str(item.get("reason") or "").startswith("llm_wall_layer_parallel_line_bundle"):
+            source_ids.extend(paired_object_ids_from_evidence(item.get("geometry_evidence")))
+
+        seen_source_ids: set[str] = set()
+        for source_id in source_ids:
+            if not source_id or source_id in seen_source_ids:
                 continue
-            coords = [(float(x), float(y)) for x, y in poly.exterior.coords]
-            entity = msp.add_lwpolyline(coords, close=True, dxfattribs={"layer": layer, "color": color})
-            try:
-                entity.dxf.const_width = 30
-            except Exception:
-                pass
+            seen_source_ids.add(source_id)
+            row = source_by_id.get(source_id)
+            if row is not None:
+                drawn += draw_review_source_row(msp, row, geom, layer, color)
+
+        if not drawn:
+            polygons = list(geom.geoms) if isinstance(geom, MultiPolygon) else [geom]
+            for poly in polygons:
+                if isinstance(poly, Polygon):
+                    draw_review_polygon(msp, poly, layer, color)
+
         minx, _miny, _maxx, maxy = item["geometry"].bounds
         add_label(
             msp,
@@ -1557,8 +1304,12 @@ def recognize_floor_obstacles(
         raise RuntimeError("没有可用于障碍物识别的楼层可巡检区域。")
 
     layer_decisions = classify_layers_by_llm(rows, out_dir)
-    llm_hit_obstacles = detect_llm_hit_obstacles(rows, regions, layer_decisions, config)
-    obstacles = filter_connected_obtuse_single_line_obstacles(llm_hit_obstacles, rows, config)
+
+    # LLM only decides trusted obstacle layers. Open wall lines must form
+    # non-dashed parallel bundles before they become obstacle polygons.
+    area_obstacles = detect_llm_hit_obstacles(rows, regions, layer_decisions, config)
+    parallel_wall_obstacles = detect_parallel_wall_line_obstacles(rows, regions, layer_decisions, config)
+    obstacles = area_obstacles + parallel_wall_obstacles
 
     obstacle_csv = out_dir / OBSTACLE_CSV_FILE
     write_obstacle_csv(obstacle_csv, obstacles)
@@ -1567,7 +1318,7 @@ def recognize_floor_obstacles(
     marked_dxf: Path | None = None
     if write_review_dxf:
         marked_dxf = write_review_dxf_file = out_dir.parent / "review" / f"{input_path.stem}_obstacles_marked.dxf"
-        marked_dxf = write_obstacle_review_dxf(input_path, write_review_dxf_file, obstacles)
+        marked_dxf = write_obstacle_review_dxf(input_path, write_review_dxf_file, obstacles, rows)
 
     type_counts = Counter(item["obstacle_type"] for item in obstacles)
     region_counts = Counter(item["full_region_id"] for item in obstacles)
@@ -1579,13 +1330,18 @@ def recognize_floor_obstacles(
             "inventory_dir": str(inventory_path),
             "sheets_json": str(sheets_path),
             "output_dir": str(out_dir),
-            "strategy": "Review mode: LLM-hit obstacle layers output directly, then connected single-line artifacts are filtered by endpoint graph angle ranges.",
+            "strategy": "LLM classifies trusted obstacle layers; closed/area geometry is clipped to inspection regions; open wall lines are accepted only when they form non-dashed parallel wall bundles with projection overlap.",
             "layer_llm_decisions": str((out_dir / LAYER_LLM_FILE).resolve()),
             "obstacle_csv": str(obstacle_csv.resolve()),
             "marked_dxf": str(marked_dxf.resolve()) if marked_dxf else "",
             "obstacle_count": len(obstacles),
             "obstacle_type_count": len(type_counts),
             "region_count": len(regions),
+            "stage_counts": {
+                "area_obstacles": len(area_obstacles),
+                "parallel_wall_line_bundle_obstacles": len(parallel_wall_obstacles),
+                "final_obstacles": len(obstacles),
+            },
             "type_counts": dict(type_counts.most_common()),
             "region_counts": dict(region_counts.most_common()),
             "per_region_geojsons": [str(path.resolve()) for path in per_region_geojsons],
