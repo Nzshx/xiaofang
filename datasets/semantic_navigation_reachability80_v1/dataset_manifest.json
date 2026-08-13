@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "dataset_id": "semantic_navigation_reachability80_v1",
+  "dataset_status": "development_unlabeled",
+  "created_date": "2026-07-17",
+  "storage_mode": "reference_existing_run_directories",
+  "physical_graph_variant": "area_graph_navigation_refined/refined_navigation_graph.json",
+  "floor_selection": {
+    "metric": "after_reachability.floors.<floor_id>.pairwise_target_reachability_rate",
+    "minimum_inclusive": 0.8,
+    "require_at_least_one_target": true,
+    "selected_floor_count": 13,
+    "excluded_floor_count": 6
+  },
+  "split_policy": {
+    "current_split": "development_only",
+    "group_key": "source_run_id",
+    "random_floor_split_allowed": false,
+    "reason": "All floors from one source run must remain together; three source runs are insufficient for a leakage-safe train/validation/test split."
+  },
+  "required_relative_files": {
+    "pipeline_summary": "pipeline_summary.json",
+    "area_graph": "area_graph/area_graph.json",
+    "portal_candidates": "area_graph/portal_candidates.geojson",
+    "refined_navigation_graph": "area_graph_navigation_refined/refined_navigation_graph.json",
+    "refinement_acceptance": "area_graph_navigation_refined/acceptance_summary.json",
+    "connector_portals": "area_graph_navigation_refined/connector_portals.geojson",
+    "refined_target_reachability": "area_graph_navigation_refined/refined_target_reachability.csv",
+    "navigation_targets": "navigation_graph/inputs/navigation_targets.geojson",
+    "free_areas": "navigation_graph/inputs/free_areas.geojson",
+    "obstacle_unions": "navigation_graph/inputs/obstacle_unions.geojson",
+    "navigation_inputs_manifest": "navigation_graph/inputs/navigation_inputs_manifest.json",
+    "inspection_recognition": "inspection_objects/region_inspection_results.json"
+  },
+  "totals_for_selected_floors": {
+    "source_run_count": 3,
+    "floor_count": 13,
+    "target_count": 2931,
+    "area_count": 1056,
+    "accepted_segmentation_portal_count": 365,
+    "connector_portal_count": 105,
+    "refined_navigation_node_count": 61642,
+    "refined_navigation_edge_count": 82141,
+    "virtual_access_target_count": 22,
+    "minimum_floor_reachability": 0.8384845463609173,
+    "maximum_floor_reachability": 0.9826086956521739
+  },
+  "feature_policy_v1": {
+    "standard_portal_relation": {
+      "continuous_features": [
+        "width / floor_scale",
+        "clearance / floor_scale",
+        "bottleneck_score",
+        "confidence"
+      ],
+      "gate": "sigmoid(MLP(edge_features_and_missing_mask))"
+    },
+    "connector_portal_relation": {
+      "continuous_features": [
+        "gap_distance / floor_scale",
+        "evidence_distance / floor_scale when available",
+        "confidence"
+      ],
+      "categorical_features": ["evidence_source"],
+      "width_and_clearance_policy": "missing_with_explicit_mask; gap_distance is not clearance",
+      "gate": "separate connector-portal MLP"
+    },
+    "physical_navigation_edge": {
+      "continuous_features": ["length / floor_scale"],
+      "clearance_used": false,
+      "gate": "length-only in v1"
+    },
+    "near_target_relation": {
+      "continuous_features": [
+        "distance_euclidean / floor_scale",
+        "decay",
+        "normalized_weight",
+        "first_order_contribution"
+      ],
+      "semantic_graph_policy": "regenerate with current 15-percent neighborhood code"
+    },
+    "missing_value_policy": "Never encode a missing physical quantity as zero; add a binary availability mask."
+  },
+  "supervision_policy": {
+    "human_route_labels_available": false,
+    "human_selection_labels_available": false,
+    "phase_1_self_supervised_tasks": [
+      "masked node-type and target-category reconstruction",
+      "LOCATED_IN_AREA and ACCESSIBLE_FROM link prediction",
+      "Area-Portal-Area relation reconstruction",
+      "continuous edge-attribute reconstruction",
+      "same-floor versus illegal cross-floor edge discrimination",
+      "floor-graph contrastive consistency"
+    ],
+    "phase_2_pseudo_label_teacher": "component-constrained open selective TSP",
+    "pseudo_label_requirements": [
+      "apply mandatory, quota, and distinct-category hard constraints",
+      "generate top-K solutions for delta 0, 0.05, and 0.10 with multiple seeds",
+      "physically validate selected consecutive legs on the refined navigation graph",
+      "reject or repair cross-component and unavailable transitions",
+      "use top-K selection frequency as soft node labels",
+      "use top-K consecutive-edge frequency as soft transition labels"
+    ],
+    "phase_3_human_review": "small pairwise route-preference audit; full hand-drawn routes are not required"
+  },
+  "source_runs": [
+    {
+      "source_run_id": "neighbor_center_123",
+      "run_dir": "D:\\untitled5\\outputs\\fire_inspection_pipeline\\邻里中心1_2_3_楼平面剖面图0620_t3_20260717120001",
+      "split": "development",
+      "refinement_accepted": true,
+      "strict_validation_failure_count": 0,
+      "connector_portal_count_all_floors": 95,
+      "reachability_before": 0.45932290610819154,
+      "reachability_after": 0.6665679043148751,
+      "selected_floor_ids": ["F1", "F2"],
+      "excluded_floors": {
+        "EQUIPMENT": {"reachability": 0.7028027498677948, "reason": "below_0.8"},
+        "F3": {"reachability": 0.7340633222986164, "reason": "below_0.8"},
+        "F4": {"reachability": 0.7724469435878832, "reason": "below_0.8"},
+        "F5": {"reachability": 0.37439812096300645, "reason": "below_0.8"},
+        "F6": {"reachability": 0.2874727668845316, "reason": "below_0.8"},
+        "F7": {"reachability": 0.5889967637540453, "reason": "below_0.8"},
+        "ROOF": {"reachability": null, "reason": "no_targets"}
+      }
+    },
+    {
+      "source_run_id": "test2",
+      "run_dir": "D:\\untitled5\\outputs\\fire_inspection_pipeline\\test2_20260717112808",
+      "split": "development",
+      "refinement_accepted": true,
+      "strict_validation_failure_count": 0,
+      "connector_portal_count_all_floors": 32,
+      "reachability_before": 0.8840154338291066,
+      "reachability_after": 0.9427909507634469,
+      "selected_floor_ids": ["B1", "B2", "F1", "F2", "F3", "F4", "F5", "F6", "ROOF"],
+      "excluded_floors": {}
+    },
+    {
+      "source_run_id": "garage_b1_b2",
+      "run_dir": "D:\\untitled5\\outputs\\fire_inspection_pipeline\\only_B1_B2_garage_20260716140239",
+      "split": "development",
+      "refinement_accepted": true,
+      "strict_validation_failure_count": 0,
+      "connector_portal_count_all_floors": 60,
+      "reachability_before": 0.7980652421324536,
+      "reachability_after": 0.8987374415501933,
+      "selected_floor_ids": ["B1", "B2"],
+      "excluded_floors": {}
+    }
+  ],
+  "floor_samples": [
+    {
+      "floor_sample_id": "neighbor_center_123__F1",
+      "source_run_id": "neighbor_center_123",
+      "floor_id": "F1",
+      "reachability": 0.9721264650842115,
+      "primary_component_coverage": 0.986013986013986,
+      "target_count": 143,
+      "area_count": 63,
+      "portal_count": 31,
+      "connector_portal_count": 5,
+      "virtual_access_count": 0,
+      "navigation_node_count": 2148,
+      "navigation_edge_count": 2709
+    },
+    {
+      "floor_sample_id": "neighbor_center_123__F2",
+      "source_run_id": "neighbor_center_123",
+      "floor_id": "F2",
+      "reachability": 0.8628318584070797,
+      "primary_component_coverage": 0.9292035398230089,
+      "target_count": 113,
+      "area_count": 70,
+      "portal_count": 39,
+      "connector_portal_count": 8,
+      "virtual_access_count": 0,
+      "navigation_node_count": 2148,
+      "navigation_edge_count": 2665
+    },
+    {
+      "floor_sample_id": "test2__B1",
+      "source_run_id": "test2",
+      "floor_id": "B1",
+      "reachability": 0.975807247951022,
+      "primary_component_coverage": 0.9878542510121457,
+      "target_count": 247,
+      "area_count": 70,
+      "portal_count": 28,
+      "connector_portal_count": 7,
+      "virtual_access_count": 4,
+      "navigation_node_count": 3107,
+      "navigation_edge_count": 3817
+    },
+    {
+      "floor_sample_id": "test2__B2",
+      "source_run_id": "test2",
+      "floor_id": "B2",
+      "reachability": 0.9414683190173322,
+      "primary_component_coverage": 0.9702970297029703,
+      "target_count": 303,
+      "area_count": 55,
+      "portal_count": 44,
+      "connector_portal_count": 0,
+      "virtual_access_count": 1,
+      "navigation_node_count": 5618,
+      "navigation_edge_count": 7684
+    },
+    {
+      "floor_sample_id": "test2__F1",
+      "source_run_id": "test2",
+      "floor_id": "F1",
+      "reachability": 0.955228981544771,
+      "primary_component_coverage": 0.9774436090225563,
+      "target_count": 133,
+      "area_count": 106,
+      "portal_count": 30,
+      "connector_portal_count": 5,
+      "virtual_access_count": 9,
+      "navigation_node_count": 3635,
+      "navigation_edge_count": 4561
+    },
+    {
+      "floor_sample_id": "test2__F2",
+      "source_run_id": "test2",
+      "floor_id": "F2",
+      "reachability": 0.9826086956521739,
+      "primary_component_coverage": 0.991304347826087,
+      "target_count": 115,
+      "area_count": 57,
+      "portal_count": 26,
+      "connector_portal_count": 3,
+      "virtual_access_count": 0,
+      "navigation_node_count": 5447,
+      "navigation_edge_count": 8328
+    },
+    {
+      "floor_sample_id": "test2__F3",
+      "source_run_id": "test2",
+      "floor_id": "F3",
+      "reachability": 0.9598021026592455,
+      "primary_component_coverage": 0.9797979797979798,
+      "target_count": 99,
+      "area_count": 56,
+      "portal_count": 16,
+      "connector_portal_count": 3,
+      "virtual_access_count": 1,
+      "navigation_node_count": 5223,
+      "navigation_edge_count": 7758
+    },
+    {
+      "floor_sample_id": "test2__F4",
+      "source_run_id": "test2",
+      "floor_id": "F4",
+      "reachability": 0.9169913095594846,
+      "primary_component_coverage": 0.9577464788732394,
+      "target_count": 142,
+      "area_count": 79,
+      "portal_count": 35,
+      "connector_portal_count": 6,
+      "virtual_access_count": 1,
+      "navigation_node_count": 5266,
+      "navigation_edge_count": 7551
+    },
+    {
+      "floor_sample_id": "test2__F5",
+      "source_run_id": "test2",
+      "floor_id": "F5",
+      "reachability": 0.888091044573906,
+      "primary_component_coverage": 0.9426229508196722,
+      "target_count": 122,
+      "area_count": 50,
+      "portal_count": 18,
+      "connector_portal_count": 4,
+      "virtual_access_count": 0,
+      "navigation_node_count": 4821,
+      "navigation_edge_count": 6865
+    },
+    {
+      "floor_sample_id": "test2__F6",
+      "source_run_id": "test2",
+      "floor_id": "F6",
+      "reachability": 0.8384845463609173,
+      "primary_component_coverage": 0.9159663865546218,
+      "target_count": 119,
+      "area_count": 48,
+      "portal_count": 23,
+      "connector_portal_count": 3,
+      "virtual_access_count": 0,
+      "navigation_node_count": 2629,
+      "navigation_edge_count": 3679
+    },
+    {
+      "floor_sample_id": "test2__ROOF",
+      "source_run_id": "test2",
+      "floor_id": "ROOF",
+      "reachability": 0.9411764705882353,
+      "primary_component_coverage": 0.9705882352941176,
+      "target_count": 34,
+      "area_count": 18,
+      "portal_count": 17,
+      "connector_portal_count": 1,
+      "virtual_access_count": 0,
+      "navigation_node_count": 1355,
+      "navigation_edge_count": 2062
+    },
+    {
+      "floor_sample_id": "garage_b1_b2__B1",
+      "source_run_id": "garage_b1_b2",
+      "floor_id": "B1",
+      "reachability": 0.860974946938972,
+      "primary_component_coverage": 0.927916120576671,
+      "target_count": 763,
+      "area_count": 239,
+      "portal_count": 28,
+      "connector_portal_count": 52,
+      "virtual_access_count": 6,
+      "navigation_node_count": 10566,
+      "navigation_edge_count": 12560
+    },
+    {
+      "floor_sample_id": "garage_b1_b2__B2",
+      "source_run_id": "garage_b1_b2",
+      "floor_id": "B2",
+      "reachability": 0.9602359624207997,
+      "primary_component_coverage": 0.979933110367893,
+      "target_count": 598,
+      "area_count": 145,
+      "portal_count": 30,
+      "connector_portal_count": 8,
+      "virtual_access_count": 0,
+      "navigation_node_count": 9679,
+      "navigation_edge_count": 11902
+    }
+  ]
+}
