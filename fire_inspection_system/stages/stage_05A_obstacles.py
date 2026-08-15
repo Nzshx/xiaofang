@@ -57,7 +57,7 @@ ARK_CHAT_COMPLETIONS_URL = (
     "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 )
 DEFAULT_ARK_VISION_MODEL = "doubao-seed-2-0-lite-260215"
-DEFAULT_ARK_API_KEY = "ark-7f05dde4-a396-49a1-ba3c-963933317d21-f4d0b"
+DEFAULT_ARK_API_KEY = ""
 
 
 @dataclass(frozen=True)
