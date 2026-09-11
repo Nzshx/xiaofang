@@ -1,0 +1,12 @@
+numpy>=1.24
+shapely>=2.0
+triangle>=20230923
+scipy>=1.10
+networkx>=3.2
+scikit-learn>=1.4
+scikit-image>=0.24
+ezdxf>=1.1
+Pillow>=10.0
+torch>=2.0
+fastapi>=0.110
+uvicorn>=0.27
