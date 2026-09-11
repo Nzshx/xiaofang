@@ -1,7 +1,0 @@
-{
-    "provider":  "deepseek",
-    "api_style":  "openai_compatible",
-    "api_key":  "sk-15d02d1fcc4a4bfca948cef49da80ee8",
-    "base_url":  "https://api.deepseek.com",
-    "model":  "deepseek-v4-flash"
-}
