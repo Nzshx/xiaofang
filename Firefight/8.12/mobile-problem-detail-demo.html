@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>消防问题详情 - 移动端接口测试</title>
+  <style>
+    :root {
+      --red: #d92329;
+      --red-dark: #bd151c;
+      --red-soft: #fff0f0;
+      --blue: #1687e8;
+      --blue-soft: #e3f3ff;
+      --ink: #263238;
+      --muted: #748087;
+      --line: #e3e7ea;
+      --canvas: #f2f4f7;
+      --card: #ffffff;
+      --shadow: 0 8px 26px rgba(37, 55, 70, .07);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: #dfe3e7;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    .phone {
+      width: min(100%, 430px);
+      min-height: 100vh;
+      margin: 0 auto;
+      position: relative;
+      background: var(--canvas);
+      box-shadow: 0 0 40px rgba(22, 30, 38, .18);
+      overflow-x: hidden;
+    }
+    .topbar {
+      height: 64px;
+      padding: 0 18px;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      display: grid;
+      grid-template-columns: 44px 1fr 44px;
+      align-items: center;
+      color: #fff;
+      background: linear-gradient(135deg, var(--red), var(--red-dark));
+      box-shadow: 0 3px 12px rgba(183, 28, 28, .22);
+    }
+    .topbar-title { text-align: center; font-size: 18px; font-weight: 750; letter-spacing: .5px; }
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      border: 0;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: inherit;
+      background: rgba(255,255,255,.08);
+      cursor: pointer;
+    }
+    .content { padding: 14px 14px 118px; display: grid; gap: 14px; }
+    .card {
+      border-radius: 20px;
+      padding: 16px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 12px;
+      font-size: 17px;
+      font-weight: 750;
+      color: #626d73;
+    }
+    .ai-badge {
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: #1477c9;
+      background: #e3f3ff;
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: .5px;
+    }
+
+    .photo-stage {
+      height: 238px;
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      color: rgba(255,255,255,.64);
+      background: linear-gradient(150deg, #77909b, #48616b 70%, #3f535d);
+    }
+    .photo-stage img { width: 100%; height: 100%; object-fit: cover; display: none; }
+    .photo-placeholder { text-align: center; }
+    .photo-placeholder svg { opacity: .52; }
+    .photo-placeholder div { margin-top: 9px; font-size: 13px; }
+    .photo-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+    .soft-button {
+      min-height: 52px;
+      border: 0;
+      border-radius: 14px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 7px;
+      color: #40515a;
+      background: #f5f6f7;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .category-box { position: relative; }
+    .category-trigger {
+      min-height: 52px;
+      width: 100%;
+      padding: 0 14px;
+      border: 1.5px solid #dfe3e6;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #202b30;
+      background: #fbfbfc;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .category-trigger.open { border-color: #ef8e92; box-shadow: 0 0 0 3px rgba(217,35,41,.07); }
+    .category-trigger svg { transition: transform .2s ease; }
+    .category-trigger.open svg { transform: rotate(90deg); }
+    .issue-picker {
+      display: none;
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 7px);
+      left: 0;
+      right: 0;
+      max-height: 340px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 8px;
+      background: #fff;
+      box-shadow: 0 16px 34px rgba(36, 52, 64, .18);
+    }
+    .issue-picker.show { display: block; }
+    .picker-heading { padding: 8px 10px 5px; color: #9aa3a8; font-size: 11px; }
+    .picker-group-title {
+      margin-top: 5px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      color: #53616a;
+      background: #f5f7f8;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .issue-option {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid #f0f2f3;
+      padding: 11px 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      text-align: left;
+      color: #36454d;
+      background: #fff;
+      cursor: pointer;
+    }
+    .issue-option:last-child { border-bottom: 0; }
+    .issue-option.selected { border-radius: 10px; color: var(--red); background: var(--red-soft); }
+    .issue-name { font-size: 13px; line-height: 1.45; }
+    .issue-code { margin-top: 3px; color: #9aa3a8; font-size: 10px; }
+    .issue-confidence { align-self: center; font-size: 11px; font-weight: 700; }
+
+    .recommend-title { margin: 16px 0 9px; color: #7a858b; font-size: 13px; }
+    .recommend-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .recommend-chip {
+      border: 1.5px solid #e0e3e5;
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: #8e969b;
+      background: #f7f7f8;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .recommend-chip.selected {
+      border-color: #ff9296;
+      color: var(--red);
+      background: var(--red-soft);
+      font-weight: 700;
+    }
+    .recommend-chip small { margin-left: 3px; font-size: 10px; font-weight: 500; }
+
+    .readonly-box {
+      width: 100%;
+      min-height: 78px;
+      padding: 13px 14px;
+      border: 1px solid #dde1e3;
+      border-radius: 14px;
+      color: #20292e;
+      background: #fbfbfc;
+      font-size: 15px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .advice-box { min-height: 92px; }
+
+    .regulation-list { display: grid; gap: 10px; }
+    .regulation-item {
+      position: relative;
+      border-radius: 14px;
+      overflow: visible;
+      color: #0968be;
+      background: #e1f2ff;
+    }
+    .regulation-main {
+      width: 100%;
+      min-height: 54px;
+      padding: 12px 14px;
+      border: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      color: inherit;
+      background: transparent;
+      cursor: pointer;
+    }
+    .regulation-title { flex: 1; font-size: 13px; line-height: 1.4; }
+    .regulation-arrow { transition: transform .2s ease; }
+    .regulation-item.expanded .regulation-arrow { transform: rotate(90deg); }
+    .regulation-content {
+      display: none;
+      margin: 0 14px;
+      padding: 11px 0 13px;
+      border-top: 1px solid #b9dff8;
+      color: #4e6877;
+      font-size: 12px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .regulation-item.expanded .regulation-content { display: block; }
+    .regulation-remove {
+      width: 24px;
+      height: 24px;
+      border: 1px solid #d8dde0;
+      border-radius: 50%;
+      position: absolute;
+      right: -7px;
+      top: -7px;
+      display: grid;
+      place-items: center;
+      color: #8a969c;
+      background: #fff;
+      cursor: pointer;
+    }
+    .add-button {
+      margin-top: 12px;
+      padding: 9px 15px;
+      border: 1.5px dashed #65b6f5;
+      border-radius: 999px;
+      color: #0874ce;
+      background: #f1f9ff;
+      cursor: pointer;
+    }
+    .add-button[hidden] { display: none; }
+    .empty-state { padding: 18px; text-align: center; color: #a0a8ad; font-size: 13px; }
+
+    .bottombar {
+      width: min(100%, 430px);
+      min-height: 102px;
+      position: fixed;
+      z-index: 35;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: 1fr 1.18fr;
+      gap: 12px;
+      border-top: 1px solid #e4e7e9;
+      background: rgba(255,255,255,.96);
+      backdrop-filter: blur(10px);
+    }
+    .bottom-button {
+      min-height: 58px;
+      border-radius: 17px;
+      border: 1px solid #dce0e2;
+      color: #42525b;
+      background: #fff;
+      font-size: 17px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .bottom-button.primary {
+      border: 0;
+      color: #fff;
+      background: linear-gradient(135deg, var(--red), var(--red-dark));
+      box-shadow: 0 7px 17px rgba(217,35,41,.28);
+    }
+
+    .status-strip {
+      display: none;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .status-strip.show { display: block; }
+    .status-strip.info { color: #0d659f; background: #e9f6ff; }
+    .status-strip.error { color: #a91b21; background: #fff0f0; }
+    .status-strip.success { color: #237547; background: #ecf8f0; }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      inset: 0;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(20, 29, 34, .48);
+    }
+    .overlay.show { display: flex; }
+    .sheet {
+      width: min(100%, 430px);
+      max-height: 82vh;
+      overflow-y: auto;
+      border-radius: 24px 24px 0 0;
+      padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
+      background: #fff;
+      box-shadow: 0 -12px 35px rgba(0,0,0,.16);
+      animation: slide-up .22s ease;
+    }
+    @keyframes slide-up { from { transform: translateY(35px); opacity: .4; } }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .sheet-title { font-size: 18px; font-weight: 800; }
+    .close-button { width: 32px; height: 32px; border: 0; border-radius: 50%; color: #7c878c; background: #f2f4f5; cursor: pointer; }
+    .form-grid { display: grid; gap: 13px; }
+    .form-label { display: grid; gap: 6px; color: #69767d; font-size: 12px; }
+    .form-input {
+      width: 100%;
+      padding: 12px 13px;
+      border: 1px solid #dce1e3;
+      border-radius: 12px;
+      outline: none;
+      color: #243138;
+      background: #fafbfb;
+      font-size: 14px;
+    }
+    .form-input:focus { border-color: #e66c71; box-shadow: 0 0 0 3px rgba(217,35,41,.06); }
+    .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .sheet-button { min-height: 48px; border: 0; border-radius: 13px; color: #44545d; background: #f0f2f3; font-weight: 700; cursor: pointer; }
+    .sheet-button.primary { color: #fff; background: var(--red); }
+    .reg-choice {
+      width: 100%;
+      margin-bottom: 9px;
+      padding: 12px;
+      border: 1px solid #cce7fa;
+      border-radius: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #176dad;
+      text-align: left;
+      background: #edf8ff;
+      cursor: pointer;
+    }
+    .reg-choice-plus { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; border-radius: 50%; background: #fff; }
+    .reg-choice-title { font-size: 13px; font-weight: 700; }
+    .reg-choice-content { margin-top: 3px; color: #66818f; font-size: 11px; line-height: 1.45; }
+
+    .toast {
+      max-width: 340px;
+      position: fixed;
+      z-index: 200;
+      left: 50%;
+      bottom: 122px;
+      transform: translate(-50%, 12px);
+      padding: 10px 16px;
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(31,42,48,.9);
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .skeleton { border-radius: 8px; background: linear-gradient(90deg,#eef1f3,#f7f8f9,#eef1f3); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    @media (max-width: 430px) {
+      body { background: var(--canvas); }
+      .phone { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="phone">
+    <header class="topbar">
+      <button class="icon-button" aria-label="返回" onclick="history.back()">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="topbar-title">问题详情</div>
+      <button class="icon-button" aria-label="接口配置" onclick="openConfig()" title="接口配置">
+        <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.88l.05.05-2.83 2.83-.05-.05A1.7 1.7 0 0015 19.4a1.7 1.7 0 00-1 1.55V21h-4v-.05a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.88.34l-.05.05-2.83-2.83.05-.05A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.55-1H3v-4h.05A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.34-1.88l-.05-.05 2.83-2.83.05.05A1.7 1.7 0 009 4.6a1.7 1.7 0 001-1.55V3h4v.05a1.7 1.7 0 001 1.55 1.7 1.7 0 001.88-.34l.05-.05 2.83 2.83-.05.05A1.7 1.7 0 0019.4 9a1.7 1.7 0 001.55 1H21v4h-.05a1.7 1.7 0 00-1.55 1z"/></svg>
+      </button>
+    </header>
+
+    <div class="content">
+      <div id="statusStrip" class="status-strip"></div>
+
+      <section class="card">
+        <div class="photo-stage">
+          <img id="photoImage" alt="问题现场照片">
+          <div id="photoPlaceholder" class="photo-placeholder">
+            <svg width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <div>消防问题现场实拍照片</div>
+          </div>
+        </div>
+        <div class="photo-actions">
+          <button class="soft-button" onclick="document.getElementById('cameraInput').click()">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            重新拍照
+          </button>
+          <button class="soft-button" onclick="document.getElementById('fileInput').click()">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            重新选择
+          </button>
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden onchange="previewLocalImage(this)">
+          <input id="fileInput" type="file" accept="image/*" hidden onchange="previewLocalImage(this)">
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">问题分类 <span class="ai-badge">AI</span></div>
+        <div class="category-box">
+          <button id="categoryTrigger" class="category-trigger" onclick="toggleIssuePicker()">
+            <span id="categoryValue">正在加载...</span>
+            <svg width="16" height="16" fill="#7b858b" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <div id="issuePicker" class="issue-picker"></div>
+        </div>
+        <div class="recommend-title">AI 推荐的问题分类：</div>
+        <div id="recommendList" class="recommend-list"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">问题描述 <span class="ai-badge">AI</span></div>
+        <div id="problemDescription" class="readonly-box">正在加载问题详情...</div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">关联条文法规 <span class="ai-badge">AI</span></div>
+        <div id="regulationList" class="regulation-list"></div>
+        <button id="addRegulationButton" class="add-button" onclick="openRegulationSheet()">＋ 添加</button>
+      </section>
+
+      <section class="card">
+        <div class="section-title">整改建议 <span class="ai-badge">AI</span></div>
+        <div id="rectificationAdvice" class="readonly-box advice-box">正在加载整改建议...</div>
+      </section>
+    </div>
+
+    <footer class="bottombar">
+      <button class="bottom-button" onclick="document.getElementById('cameraInput').click()">再次拍照</button>
+      <button class="bottom-button primary" onclick="reportProblem()">上报问题</button>
+    </footer>
+  </main>
+
+  <div id="configOverlay" class="overlay" onclick="closeOverlayByOutside(event, 'configOverlay')">
+    <section class="sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title">接口测试配置</div>
+          <div style="margin-top:4px;color:#8a9499;font-size:12px;">连接本地 Firefight API，配置仅保存在当前浏览器</div>
+        </div>
+        <button class="close-button" onclick="closeConfig()">×</button>
+      </div>
+      <div class="form-grid">
+        <label class="form-label">API 地址
+          <input id="apiBaseInput" class="form-input" placeholder="http://127.0.0.1:8005">
+        </label>
+        <label class="form-label">任务 ID（job_id）
+          <input id="jobIdInput" class="form-input" placeholder="输入已完成任务的 job_id">
+        </label>
+        <label class="form-label">Bearer Token
+          <input id="tokenInput" class="form-input" type="password" placeholder="test-token-123">
+        </label>
+      </div>
+      <div class="sheet-actions">
+        <button class="sheet-button" onclick="useDemoData()">使用演示数据</button>
+        <button class="sheet-button primary" onclick="loadMobileViewFromForm()">加载接口</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="regulationOverlay" class="overlay" onclick="closeOverlayByOutside(event, 'regulationOverlay')">
+    <section class="sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title">添加关联法规</div>
+          <div style="margin-top:4px;color:#8a9499;font-size:12px;">仅追加到当前页面，不会写入数据库</div>
+        </div>
+        <button class="close-button" onclick="closeRegulationSheet()">×</button>
+      </div>
+      <div id="regulationChoices"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const ICON_FILE = '<svg width="17" height="17" fill="#178be6" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm1 15H8v-2h7v2zm1-4H8v-2h8v2zm-3-4V3.5L18.5 9H13z"/></svg>';
+    const ICON_ARROW = '<svg class="regulation-arrow" width="14" height="14" fill="#67b9ef" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+
+    const state = {
+      apiBase: localStorage.getItem('firefightApiBase') || 'http://127.0.0.1:8005',
+      jobId: localStorage.getItem('firefightJobId') || '',
+      token: localStorage.getItem('firefightToken') || 'test-token-123',
+      view: null,
+      selectedCategoryId: null,
+      selectedHazard: null,
+      visibleRegulationIds: new Set(),
+      userAddedRegulationIds: new Set(),
+      imageUrl: null,
+      usingDemo: true,
+      requestSerial: 0
+    };
+
+    const demoDetails = {
+      'h-0': {
+        hazard_id: 'h-0', category2_id: 'category2:1.4.2', category2: '1.4.2 消防应急照明和疏散指示系统',
+        issue_id: '1.4.2-7', category3: '应急照明灯具损坏', point: '疏散走道', confidence: .93, confidence_percent: 93,
+        description: '应急照明灯具损坏，无法正常工作，照度不满足疏散要求。',
+        rectification_advice: '立即更换损坏的应急照明灯具，确保照度满足疏散要求，并定期巡检维护。',
+        regulations: [
+          {regulation_id:'reg-1', title:'GB 51309-2018 第3.3.2条', standard:'GB 51309-2018', clause:'3.3.2', content:'消防应急照明和疏散指示系统的应急照明灯具最低水平照度应符合规定。', default_visible:true},
+          {regulation_id:'reg-2', title:'GB 55036-2022 第10.1.2条', standard:'GB 55036-2022', clause:'10.1.2', content:'建筑中的消防应急照明和疏散指示系统应保证人员安全疏散。', default_visible:true},
+          {regulation_id:'reg-3', title:'GB 50016-2014 第10.3.1条', standard:'GB 50016-2014', clause:'10.3.1', content:'建筑内设置的消防应急照明应符合现行国家标准的有关规定。', default_visible:true},
+          {regulation_id:'reg-4', title:'GB 51309-2018 第3.2.5条', standard:'GB 51309-2018', clause:'3.2.5', content:'灯具的设置部位和安装方式应满足系统设计要求。', default_visible:false},
+          {regulation_id:'reg-5', title:'GB 51309-2018 第4.5.1条', standard:'GB 51309-2018', clause:'4.5.1', content:'系统投入使用前应按规定进行调试和功能检查。', default_visible:false}
+        ],
+        default_regulation_ids:['reg-1','reg-2','reg-3'], remaining_regulation_ids:['reg-4','reg-5']
+      },
+      'h-1': {
+        hazard_id:'h-1', category2_id:'category2:1.4.2', category2:'1.4.2 消防应急照明和疏散指示系统',
+        issue_id:'1.4.2-9', category3:'疏散指示标志设置不规范', point:'安全出口上方', confidence:.81, confidence_percent:81,
+        description:'安全出口上方的疏散指示标志安装位置偏移，指示方向不清晰。',
+        rectification_advice:'按设计位置重新安装疏散指示标志，调整指示方向并进行功能测试。',
+        regulations:[
+          {regulation_id:'reg-1', title:'GB 51309-2018 第3.2.9条', standard:'GB 51309-2018', clause:'3.2.9', content:'方向标志灯的标志面应与疏散方向相对应。', default_visible:true},
+          {regulation_id:'reg-2', title:'GB 55037-2022 第12.2.4条', standard:'GB 55037-2022', clause:'12.2.4', content:'疏散指示标志应清晰、连续地指示疏散方向。', default_visible:true}
+        ], default_regulation_ids:['reg-1','reg-2'], remaining_regulation_ids:[]
+      },
+      'h-2': {
+        hazard_id:'h-2', category2_id:'category2:1.2.3', category2:'1.2.3 防火门窗和防火卷帘',
+        issue_id:'1.2.3-5', category3:'防火门闭门器失效', point:'楼梯间防火门', confidence:.76, confidence_percent:76,
+        description:'防火门闭门器损坏，门扇开启后无法自行关闭。',
+        rectification_advice:'更换闭门器并调试，使防火门能够自行关闭且关闭严密。',
+        regulations:[
+          {regulation_id:'reg-1', title:'GB 50016-2014 第6.5.1条', standard:'GB 50016-2014', clause:'6.5.1', content:'常开防火门应能在火灾时自行关闭，并应具有信号反馈功能。', default_visible:true},
+          {regulation_id:'reg-2', title:'GB 12955-2008 第5.3.3条', standard:'GB 12955-2008', clause:'5.3.3', content:'防火门应设置闭门装置并保证门扇可靠关闭。', default_visible:true},
+          {regulation_id:'reg-3', title:'GB 55037-2022 第7.3.2条', standard:'GB 55037-2022', clause:'7.3.2', content:'防火门的组件应保持完整有效。', default_visible:true},
+          {regulation_id:'reg-4', title:'GB 50877-2014 第5.2.9条', standard:'GB 50877-2014', clause:'5.2.9', content:'防火门闭门器应保证门扇正常关闭。', default_visible:false}
+        ], default_regulation_ids:['reg-1','reg-2','reg-3'], remaining_regulation_ids:['reg-4']
+      }
+    };
+
+    const demoPayload = {
+      job_id:'demo-job', status:'done', image_url:null,
+      mobile_view:{
+        field_labels:{category:'问题分类'},
+        category2_options:[
+          {category2_id:'category2:1.4.2',category2_code:'1.4.2',label:'1.4.2 消防应急照明和疏散指示系统'},
+          {category2_id:'category2:1.2.3',category2_code:'1.2.3',label:'1.2.3 防火门窗和防火卷帘'}
+        ],
+        ai_recommended_categories:[
+          {category2_id:'category2:1.4.2',label:'1.4.2 消防应急照明和疏散指示系统',confidence:.93,confidence_percent:93,issue_count:2,default_hazard_id:'h-0'},
+          {category2_id:'category2:1.2.3',label:'1.2.3 防火门窗和防火卷帘',confidence:.76,confidence_percent:76,issue_count:1,default_hazard_id:'h-2'}
+        ],
+        default_category2_id:'category2:1.4.2', default_hazard_id:'h-0',
+        issue_options:[
+          {hazard_id:'h-0',category2_id:'category2:1.4.2',category2:'1.4.2 消防应急照明和疏散指示系统',issue_id:'1.4.2-7',category3:'应急照明灯具损坏',confidence:.93,confidence_percent:93},
+          {hazard_id:'h-1',category2_id:'category2:1.4.2',category2:'1.4.2 消防应急照明和疏散指示系统',issue_id:'1.4.2-9',category3:'疏散指示标志设置不规范',confidence:.81,confidence_percent:81},
+          {hazard_id:'h-2',category2_id:'category2:1.2.3',category2:'1.2.3 防火门窗和防火卷帘',issue_id:'1.2.3-5',category3:'防火门闭门器失效',confidence:.76,confidence_percent:76}
+        ],
+        selected_hazard:demoDetails['h-0']
+      }
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    }
+
+    function normalizeApiBase(value) {
+      return String(value || '').trim().replace(/\/+$/, '');
+    }
+
+    function apiHeaders() {
+      const headers = {'Accept':'application/json'};
+      if (state.token) headers.Authorization = 'Bearer ' + state.token;
+      return headers;
+    }
+
+    function setStatus(message, type) {
+      const strip = document.getElementById('statusStrip');
+      strip.textContent = message || '';
+      strip.className = 'status-strip' + (message ? ' show ' + (type || 'info') : '');
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    function applyPayload(payload, usingDemo) {
+      if (!payload || payload.status !== 'done' || !payload.mobile_view) {
+        throw new Error(payload?.error || ('任务状态为 ' + (payload?.status || '未知') + '，暂无可展示结果'));
+      }
+      state.usingDemo = usingDemo;
+      state.view = payload.mobile_view;
+      state.imageUrl = payload.image_url || null;
+      state.selectedCategoryId = state.view.default_category2_id;
+      setSelectedHazard(state.view.selected_hazard);
+      renderPhoto();
+      renderCategoryArea();
+      renderIssuePicker();
+      setStatus(usingDemo ? '当前使用演示数据；点击右上角设置可连接真实接口。' : '接口已连接，任务 ' + (payload.job_id || state.jobId) + ' 加载成功。', usingDemo ? 'info' : 'success');
+    }
+
+    function setSelectedHazard(detail) {
+      state.selectedHazard = detail || null;
+      state.visibleRegulationIds = new Set(detail?.default_regulation_ids || []);
+      state.userAddedRegulationIds = new Set();
+      if (detail?.category2_id) state.selectedCategoryId = detail.category2_id;
+      renderDetail();
+    }
+
+    function renderPhoto() {
+      const image = document.getElementById('photoImage');
+      const placeholder = document.getElementById('photoPlaceholder');
+      if (state.imageUrl) {
+        image.src = state.imageUrl;
+        image.style.display = 'block';
+        placeholder.style.display = 'none';
+        image.onerror = () => { image.style.display = 'none'; placeholder.style.display = 'block'; };
+      } else {
+        image.removeAttribute('src');
+        image.style.display = 'none';
+        placeholder.style.display = 'block';
+      }
+    }
+
+    function categoryLabel(categoryId) {
+      const recommended = state.view?.ai_recommended_categories?.find(item => item.category2_id === categoryId);
+      if (recommended) return recommended.label;
+      const option = state.view?.category2_options?.find(item => item.category2_id === categoryId);
+      return option?.label || state.selectedHazard?.category2 || '暂无识别结果';
+    }
+
+    function renderCategoryArea() {
+      document.getElementById('categoryValue').textContent = categoryLabel(state.selectedCategoryId);
+      const list = document.getElementById('recommendList');
+      const recommendations = state.view?.ai_recommended_categories || [];
+      if (!recommendations.length) {
+        list.innerHTML = '<div class="empty-state">本次未识别到问题分类</div>';
+        return;
+      }
+      list.innerHTML = recommendations.map(item => {
+        const selected = item.category2_id === state.selectedCategoryId ? ' selected' : '';
+        const percent = item.confidence_percent == null ? '--' : item.confidence_percent + '%';
+        return '<button class="recommend-chip' + selected + '" data-category-id="' + escapeHtml(item.category2_id) + '" onclick="selectRecommendedCategory(this.dataset.categoryId)">' + escapeHtml(item.label) + '<small>' + percent + '</small></button>';
+      }).join('');
+    }
+
+    function renderIssuePicker() {
+      const picker = document.getElementById('issuePicker');
+      const options = state.view?.issue_options || [];
+      if (!options.length) {
+        picker.innerHTML = '<div class="empty-state">没有可选择的三级问题</div>';
+        return;
+      }
+      const groups = [];
+      options.forEach(item => {
+        let group = groups.find(entry => entry.id === item.category2_id);
+        if (!group) { group = {id:item.category2_id, label:item.category2, items:[]}; groups.push(group); }
+        group.items.push(item);
+      });
+      picker.innerHTML = '<div class="picker-heading">请选择本次识别出的三级问题</div>' + groups.map(group =>
+        '<div class="picker-group-title">' + escapeHtml(group.label) + '</div>' +
+        group.items.map(item => {
+          const selected = item.hazard_id === state.selectedHazard?.hazard_id ? ' selected' : '';
+          const percent = item.confidence_percent == null ? '--' : item.confidence_percent + '%';
+          return '<button class="issue-option' + selected + '" data-hazard-id="' + escapeHtml(item.hazard_id) + '" onclick="selectHazard(this.dataset.hazardId)"><span><span class="issue-name">' + escapeHtml(item.category3) + '</span><span class="issue-code">' + escapeHtml(item.issue_id) + '</span></span><span class="issue-confidence">' + percent + '</span></button>';
+        }).join('')
+      ).join('');
+    }
+
+    function renderDetail() {
+      const detail = state.selectedHazard;
+      document.getElementById('problemDescription').textContent = detail?.description || '暂无问题描述';
+      document.getElementById('rectificationAdvice').textContent = detail?.rectification_advice || '暂无整改建议';
+      renderRegulations();
+      renderCategoryArea();
+      renderIssuePicker();
+    }
+
+    function renderRegulations() {
+      const all = state.selectedHazard?.regulations || [];
+      const visible = all.filter(item => state.visibleRegulationIds.has(item.regulation_id));
+      const list = document.getElementById('regulationList');
+      if (!visible.length) {
+        list.innerHTML = '<div class="empty-state">当前问题暂无关联法规</div>';
+      } else {
+        list.innerHTML = visible.map(item => {
+          const removable = state.userAddedRegulationIds.has(item.regulation_id);
+          const content = item.content || '暂未返回已核验的条文原文，可根据条款索引进一步核验。';
+          return '<article class="regulation-item" data-regulation-id="' + escapeHtml(item.regulation_id) + '">' +
+            (removable ? '<button class="regulation-remove" data-regulation-id="' + escapeHtml(item.regulation_id) + '" onclick="removeAddedRegulation(event,this.dataset.regulationId)">×</button>' : '') +
+            '<button class="regulation-main" onclick="this.parentElement.classList.toggle(\'expanded\')">' + ICON_FILE + '<span class="regulation-title">' + escapeHtml(item.title) + '</span>' + ICON_ARROW + '</button>' +
+            '<div class="regulation-content">' + escapeHtml(content) + '</div></article>';
+        }).join('');
+      }
+      const hasRemaining = all.some(item => !state.visibleRegulationIds.has(item.regulation_id));
+      document.getElementById('addRegulationButton').hidden = !hasRemaining;
+    }
+
+    function toggleIssuePicker() {
+      document.getElementById('categoryTrigger').classList.toggle('open');
+      document.getElementById('issuePicker').classList.toggle('show');
+    }
+
+    function closeIssuePicker() {
+      document.getElementById('categoryTrigger').classList.remove('open');
+      document.getElementById('issuePicker').classList.remove('show');
+    }
+
+    async function selectRecommendedCategory(categoryId) {
+      const recommendation = state.view?.ai_recommended_categories?.find(item => item.category2_id === categoryId);
+      if (!recommendation) return;
+      state.selectedCategoryId = categoryId;
+      renderCategoryArea();
+      await selectHazard(recommendation.default_hazard_id);
+    }
+
+    async function selectHazard(hazardId) {
+      closeIssuePicker();
+      const option = state.view?.issue_options?.find(item => item.hazard_id === hazardId);
+      if (option) state.selectedCategoryId = option.category2_id;
+      renderCategoryArea();
+      if (state.usingDemo) {
+        setSelectedHazard(demoDetails[hazardId]);
+        return;
+      }
+      const serial = ++state.requestSerial;
+      setStatus('正在加载所选三级问题详情...', 'info');
+      try {
+        const url = state.apiBase + '/analyze/fire-safety/' + encodeURIComponent(state.jobId) + '/mobile-view/hazards/' + encodeURIComponent(hazardId);
+        const response = await fetch(url, {headers:apiHeaders()});
+        const payload = await readJsonResponse(response);
+        if (serial !== state.requestSerial) return;
+        if (!response.ok || payload.status !== 'done' || !payload.selected_hazard) throw new Error(payload.detail || payload.error || '三级问题详情加载失败');
+        setSelectedHazard(payload.selected_hazard);
+        setStatus('已切换到：' + (payload.selected_hazard.category3 || payload.selected_hazard.issue_id), 'success');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    }
+
+    function openRegulationSheet() {
+      const choices = (state.selectedHazard?.regulations || []).filter(item => !state.visibleRegulationIds.has(item.regulation_id));
+      const box = document.getElementById('regulationChoices');
+      box.innerHTML = choices.length ? choices.map(item =>
+        '<button class="reg-choice" data-regulation-id="' + escapeHtml(item.regulation_id) + '" onclick="addRegulation(this.dataset.regulationId)"><span class="reg-choice-plus">＋</span><span><span class="reg-choice-title">' + escapeHtml(item.title) + '</span><span class="reg-choice-content">' + escapeHtml(item.content || '暂无已核验原文') + '</span></span></button>'
+      ).join('') : '<div class="empty-state">没有剩余法规可添加</div>';
+      document.getElementById('regulationOverlay').classList.add('show');
+    }
+
+    function closeRegulationSheet() { document.getElementById('regulationOverlay').classList.remove('show'); }
+
+    function addRegulation(regulationId) {
+      state.visibleRegulationIds.add(regulationId);
+      state.userAddedRegulationIds.add(regulationId);
+      renderRegulations();
+      openRegulationSheet();
+      showToast('已添加到当前页面');
+    }
+
+    function removeAddedRegulation(event, regulationId) {
+      event.stopPropagation();
+      state.visibleRegulationIds.delete(regulationId);
+      state.userAddedRegulationIds.delete(regulationId);
+      renderRegulations();
+    }
+
+    function openConfig() {
+      document.getElementById('apiBaseInput').value = state.apiBase;
+      document.getElementById('jobIdInput').value = state.jobId;
+      document.getElementById('tokenInput').value = state.token;
+      document.getElementById('configOverlay').classList.add('show');
+    }
+
+    function closeConfig() { document.getElementById('configOverlay').classList.remove('show'); }
+
+    function closeOverlayByOutside(event, overlayId) {
+      if (event.target.id === overlayId) document.getElementById(overlayId).classList.remove('show');
+    }
+
+    function useDemoData() {
+      closeConfig();
+      applyPayload(demoPayload, true);
+    }
+
+    async function readJsonResponse(response) {
+      const text = await response.text();
+      if (!text) return {};
+      try { return JSON.parse(text); }
+      catch (_) { throw new Error('接口返回的不是有效 JSON：' + text.slice(0, 120)); }
+    }
+
+    async function loadMobileViewFromForm() {
+      state.apiBase = normalizeApiBase(document.getElementById('apiBaseInput').value);
+      state.jobId = document.getElementById('jobIdInput').value.trim();
+      state.token = document.getElementById('tokenInput').value.trim();
+      if (!state.apiBase || !state.jobId) {
+        showToast('请填写 API 地址和 job_id');
+        return;
+      }
+      localStorage.setItem('firefightApiBase', state.apiBase);
+      localStorage.setItem('firefightJobId', state.jobId);
+      localStorage.setItem('firefightToken', state.token);
+      closeConfig();
+      await loadMobileView();
+    }
+
+    async function loadMobileView() {
+      setStatus('正在连接移动端展示接口...', 'info');
+      try {
+        const url = state.apiBase + '/analyze/fire-safety/' + encodeURIComponent(state.jobId) + '/mobile-view';
+        const response = await fetch(url, {headers:apiHeaders()});
+        const payload = await readJsonResponse(response);
+        if (!response.ok) throw new Error(payload.detail || payload.error || ('接口请求失败：HTTP ' + response.status));
+        applyPayload(payload, false);
+      } catch (error) {
+        setStatus(error.message + '。可点击右上角设置检查地址、Token 和任务 ID。', 'error');
+      }
+    }
+
+    function previewLocalImage(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      state.imageUrl = URL.createObjectURL(file);
+      renderPhoto();
+      showToast('已在当前页面替换预览图片');
+      input.value = '';
+    }
+
+    function reportProblem() {
+      const detail = state.selectedHazard;
+      if (!detail) return showToast('暂无可上报的问题');
+      alert('测试上报\n\n问题分类：' + detail.category2 + '\n三级问题：' + detail.category3 + '\n当前展示法规：' + state.visibleRegulationIds.size + ' 条\n\n此测试页未调用写接口。');
+    }
+
+    document.addEventListener('click', event => {
+      const box = document.querySelector('.category-box');
+      if (box && !box.contains(event.target)) closeIssuePicker();
+    });
+
+    (function init() {
+      const params = new URLSearchParams(location.search);
+      const api = params.get('api');
+      const jobId = params.get('job_id');
+      if (api) state.apiBase = normalizeApiBase(api);
+      if (jobId) state.jobId = jobId;
+      applyPayload(demoPayload, true);
+      if (jobId) loadMobileView();
+    })();
+  </script>
+</body>
+</html>
