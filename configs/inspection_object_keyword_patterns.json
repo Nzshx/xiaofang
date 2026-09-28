@@ -1,0 +1,254 @@
+{
+  "description": "Inspection object keyword-combination recall rules. These rules complement the deterministic alias library and are used to recall uncertain candidates for second-stage LLM judgement.",
+  "rules": [
+    {
+      "canonical": "安全出口",
+      "must_any": [["安全", "疏散", "应急"], ["出口", "出入口", "EXIT"]],
+      "should_any": ["指示", "标志", "安全疏散", "SAFETY", "EMERGENCY", "EVAC"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "避难间",
+      "must_any": [["避难", "REFUGE"], ["间", "室", "区", "ROOM", "AREA"]],
+      "should_any": ["消防", "安全", "人员"],
+      "exclude_any": ["说明", "详见", "参见"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "消防水泵房/消防泵房",
+      "must_any": [["消防", "FIRE"], ["水泵房", "泵房", "水泵", "泵", "PUMP"], ["房", "间", "室", "ROOM"]],
+      "should_any": ["喷淋泵", "消火栓泵", "水泵控制", "FIREPUMP"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "开闭所",
+      "must_any": [["开闭", "开关", "KBS", "SWITCH"], ["所", "站", "房", "室", "ROOM", "STATION"]],
+      "should_any": ["电", "变配电", "配电"],
+      "exclude_any": ["门", "窗", "开启", "关闭"],
+      "confidence": 0.83
+    },
+    {
+      "canonical": "用户变",
+      "must_any": [["用户变", "用户变电", "YHB", "CUSTOMER", "USER"], ["变", "变电", "SUBSTATION"]],
+      "should_any": ["配电", "电房", "电室"],
+      "exclude_any": ["设计用户", "用户手册"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "配电房",
+      "must_any": [["配电", "低压配电", "高压配电", "PDR", "PDF", "PDJ"], ["房", "间", "室", "柜", "ROOM"]],
+      "should_any": ["强电", "变压器", "电缆", "电气"],
+      "exclude_any": [ "说明", "箱号", "编号"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "消防控制室/消控室",
+      "must_any": [["消防", "消控", "FIRE"], ["控制", "控室", "中心", "值班", "CONTROL"]],
+      "should_any": ["FAS", "报警主机", "联动", "图形显示", "CRT"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "风机房",
+      "must_any": [["风机", "通风机", "FAN"], ["房", "间", "室", "ROOM"]],
+      "should_any": ["通风", "空调", "送风", "排风"],
+      "confidence": 0.78
+    },
+    {
+      "canonical": "进风机房",
+      "must_any": [["进风", "送风", "SUPPLY"], ["风机", "FAN"], ["房", "间", "室", "ROOM"]],
+      "should_any": ["送风机房", "新风"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "补风机房",
+      "must_any": [["补风", "MAKEUP", "MAKE-UP"], ["风机", "FAN"], ["房", "间", "室", "ROOM"]],
+      "should_any": ["消防补风", "排烟补风"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "排烟机",
+      "must_any": [["排烟", "SMOKE", "EXHAUST"], ["机", "风机", "FAN"]],
+      "should_any": ["排烟机房", "专用排烟", "PYF", "SEF"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "强电间",
+      "must_any": [["强电", "动力", "POWER"], ["间", "井", "房", "室", "ROOM"]],
+      "should_any": ["配电", "电缆", "电气"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "弱电间",
+      "must_any": [["弱电", "智能化", "ELV"], ["间", "井", "房", "室", "ROOM"]],
+      "should_any": ["通信", "信号", "综合布线"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "强弱电间",
+      "must_any": [["强弱电", "强弱", "POWERELV"], ["间", "井", "房", "室", "ROOM"]],
+      "should_any": ["配电", "通信", "电缆"],
+      "exclude_any": ["说明", "详见"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "电井",
+      "must_any": [["电井", "电气竖井", "电缆井", "ELECTRICAL", "CABLE"], ["井", "竖井", "SHAFT"]],
+      "should_any": ["强电", "弱电", "电缆"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "消防电梯",
+      "must_any": [["消防", "FIRE"], ["电梯", "梯", "ELEVATOR", "LIFT"]],
+      "should_any": ["消防梯", "消防员电梯", "FIREFIGHTER"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "防火卷帘",
+      "must_any": [["防火", "FIRE"], ["卷帘", "卷帘门", "SHUTTER", "CURTAIN"]],
+      "should_any": ["特级", "门帘", "FHJL"],
+      "exclude_any": ["说明", "宽度", "高度"],
+      "confidence": 0.86
+    },
+    {
+      "canonical": "灭火器",
+      "must_any": [["灭火器", "EXTINGUISHER", "MHQ"]],
+      "should_any": ["手提式", "干粉", "消防箱"],
+      "exclude_any": ["灭火器配置说明", "计算"],
+      "confidence": 0.86
+    },
+    {
+      "canonical": "供水装置",
+      "must_any": [["供水", "给水", "WATER"], ["装置", "设备", "DEVICE", "SUPPLY"]],
+      "should_any": ["消防", "稳压", "增压"],
+      "confidence": 0.78
+    },
+    {
+      "canonical": "储存装置间/灭火剂储存装置/驱动装置",
+      "must_any": [["储存", "贮存", "驱动", "气瓶", "AGENT", "STORAGE"], ["装置", "间", "室", "瓶", "DEVICE", "ROOM"]],
+      "should_any": ["灭火剂", "气体灭火", "驱动装置"],
+      "exclude_any": ["普通库房"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "供水水源/消防水池",
+      "must_any": [["供水水源", "消防水源", "消防水池", "水池", "RESERVOIR", "POOL"], ["消防", "供水", "FIRE"]],
+      "should_any": ["消防泵房", "补水", "有效容积"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "消防水泵",
+      "must_any": [["消防", "喷淋", "消火栓", "FIRE", "SPRINKLER", "HYDRANT"], ["水泵", "泵", "PUMP"]],
+      "should_any": ["消防泵", "喷淋泵", "消火栓泵"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "报警阀组",
+      "must_any": [["报警阀", "ALARM"], ["阀组", "阀", "VALVE"]],
+      "should_any": ["湿式", "预作用", "喷淋"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "喷头",
+      "must_any": [["喷头", "喷淋头", "洒水喷头", "SPRINKLER", "NOZZLE"]],
+      "should_any": ["消防", "喷淋", "自动喷水"],
+      "exclude_any": ["喷头布置说明", "喷头间距"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "消防水箱",
+      "must_any": [["消防", "高位", "FIRE"], ["水箱", "TANK"]],
+      "should_any": ["高位消防水箱", "屋顶", "有效容积"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "室外（内）消火栓",
+      "must_any": [["消火栓", "HYDRANT"]],
+      "should_any": ["室内", "室外", "消防箱", "栓箱", "SN"],
+      "exclude_any": [ "系统图"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "灭火装置",
+      "must_any": [["灭火", "EXTINGUISHING"], ["装置", "系统", "设备", "DEVICE", "SYSTEM"]],
+      "should_any": ["气体灭火", "自动灭火", "七氟丙烷"],
+      "confidence": 0.80
+    },
+    {
+      "canonical": "管网与喷头",
+      "must_any": [["管网", "管道", "PIPE", "NETWORK"], ["喷头", "喷淋", "SPRINKLER", "消防"]],
+      "should_any": ["自动喷水", "喷淋管网", "消防管网"],
+      "exclude_any": ["给排水说明"],
+      "confidence": 0.78
+    },
+    {
+      "canonical": "备用发电机/柴油发电机房",
+      "must_any": [["备用", "柴油", "发电", "GENERATOR", "DIESEL"], ["发电机", "机房", "房", "室", "ROOM"]],
+      "should_any": ["备用电源", "柴油发电机房", "DG_ROOM"],
+      "exclude_any": [ "发电机基础"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "变配电房",
+      "must_any": [["变配电", "变电", "变压器", "SUBSTATION", "TRANSFORMER"], ["房", "间", "室", "所", "站", "ROOM"]],
+      "should_any": ["高压", "低压", "配电"],
+      "exclude_any": ["变更", "变量"],
+      "confidence": 0.83
+    },
+    {
+      "canonical": "消防应急照明和疏散指示标志",
+      "must_any": [["应急照明", "疏散指示", "应急灯", "EXIT_SIGN", "EMERGENCY"], ["消防", "疏散", "照明", "标志", "LIGHT", "SIGN"]],
+      "should_any": ["安全出口标志", "疏散指示标志"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "火灾探测器",
+      "must_any": [["探测器", "烟感", "温感", "DETECTOR"], ["火灾", "消防", "感烟", "感温", "SMOKE", "HEAT"]],
+      "should_any": ["报警", "FIRE DETECTOR"],
+      "exclude_any": ["探测器说明", "探测器间距"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "消防通讯",
+      "must_any": [["消防", "FIRE"], ["通讯", "通信", "电话", "COMMUNICATION", "TELEPHONE"]],
+      "should_any": ["消防电话", "专用电话"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "布线",
+      "must_any": [["布线", "线缆", "敷设", "WIRING", "CABLING"], ["消防", "报警", "控制", "通信"]],
+      "should_any": ["消防布线", "报警布线"],
+      "confidence": 0.74
+    },
+    {
+      "canonical": "应急广播及警报装置",
+      "must_any": [["广播", "警报", "声光", "BROADCAST", "ALARM"], ["应急", "消防", "警报器", "装置", "DEVICE"]],
+      "should_any": ["消防广播", "声光报警器", "AV_ALARM"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "区域显示器",
+      "must_any": [["区域", "楼层", "火灾", "ZONE", "FLOOR"], ["显示器", "显示盘", "DISPLAY", "盘"]],
+      "should_any": ["火灾显示盘", "楼层显示器"],
+      "exclude_any": ["显示说明"],
+      "confidence": 0.82
+    },
+    {
+      "canonical": "手动报警按钮",
+      "must_any": [["手动", "手报", "MANUAL"], ["报警", "按钮", "CALL", "BUTTON"]],
+      "should_any": ["火灾报警", "MCP", "MAB"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "火灾报警控制器",
+      "must_any": [["火灾报警", "报警主机", "FAS", "FACP"], ["控制器", "控制盘", "主机", "PANEL", "CONTROLLER"]],
+      "should_any": ["报警控制器", "消防报警"],
+      "confidence": 0.84
+    },
+    {
+      "canonical": "消防联动控制器及消防控制室图形显示装置",
+      "must_any": [["消防", "联动", "图形", "CRT", "GRAPHIC"], ["控制器", "显示", "显示装置", "CONTROLLER", "DISPLAY"]],
+      "should_any": ["消防联动控制器", "消防控制室图形显示装置", "图形显示装置"],
+      "confidence": 0.84
+    }
+  ]
+}

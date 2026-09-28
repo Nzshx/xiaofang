@@ -1,0 +1,7 @@
+{
+    "provider":  "volcengine_ark",
+    "api_style":  "openai_compatible",
+    "api_key":  "ark-50455360-422c-4ba7-bad4-1afc28cedbc5-10da1",
+    "base_url":  "https://ark.cn-beijing.volces.com/api/v3",
+    "model":  "deepseek-v4-flash-ga-260731"
+}
